@@ -90,7 +90,7 @@ function App() {
             </NavLink>
           ))}
         </nav>
-        <span className="version">v3.55 · S92</span>
+        <span className="version">v3.66 · LIVE DB</span>
         <AuthHeader />
         <Link className="header-cta" to="/careers">
           Khám phá nghề
@@ -206,7 +206,7 @@ function App() {
           </span>
           SkillGraph
         </div>
-        <p>React Frontend → Local v3.55 Adapter</p>
+        <p>React Frontend → ArangoDB v3.66</p>
         <Link to="/about">Giới thiệu & giới hạn dữ liệu</Link>
       </footer>
     </div>
@@ -301,7 +301,7 @@ function Home() {
           transition={{ duration: 0.6 }}
         >
           <div className="eyebrow">
-            <span /> ARANGODB · TEAM PREVIEW
+            <span /> ARANGODB · V3.66
           </div>
           <h1>
             Khám phá kỹ năng —<br />
@@ -323,7 +323,7 @@ function Home() {
             </Link>
           </div>
           <small className="notice">
-            v3.55/Sprint 92 · Team preview, chưa data freeze
+            v3.66 · Đồng bộ từ skill_graph_v366_acceptance
           </small>
         </motion.div>
         <motion.div
@@ -1276,7 +1276,7 @@ function DataQuality() {
         sâu · 9 trường hợp thiếu ghi chú giới hạn phạm vi · 0 prerequisite edge
         · 0 automatic recommendation approval.
       </div>
-      <h2>20 Essential gaps còn lại</h2>
+      <h2>{repo.getRemainingEssentialGaps().length} Essential gaps còn lại</h2>
       <div className="table-wrap">
         <table>
           <thead>
@@ -1311,7 +1311,7 @@ function About() {
       <div className="steps">
         <Info
           n="HIỆN TẠI"
-          t="React → Local v3.55 Adapter"
+          t="React → ArangoDB v3.66 Catalog"
           x="Demo đọc dữ liệu build-time, không kết nối trực tiếp database."
         />
         <Info
@@ -1345,7 +1345,7 @@ const NotFound = () => (
     <Head
       tag="404"
       title="Không tìm thấy trang"
-      text="Đường dẫn hoặc ID không tồn tại trong release v3.55."
+      text="Đường dẫn hoặc ID không tồn tại trong release v3.66."
     />
     <Link className="btn primary" to="/">
       Về trang chủ

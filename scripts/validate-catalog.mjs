@@ -1,4 +1,14 @@
-import fs from 'node:fs';const p=JSON.parse(fs.readFileSync(new URL('../src/data/generated/catalog-v355.json',import.meta.url),'utf8'));const c=p.collections,m=p.manifest;
-const expected={careers:12,skills:420,skill_groups:149,courses:504,providers:179,requires_skill:932,teaches:674,offered_by:504};for(const[k,v]of Object.entries(expected))if(c[k]?.length!==v)throw new Error(`${k}: expected ${v}, got ${c[k]?.length}`);
-const ids=new Set([...c.careers.map(x=>`careers/${x._key}`),...c.skills.map(x=>`skills/${x._key}`),...c.skill_groups.map(x=>`skill_groups/${x._key}`),...c.courses.map(x=>`courses/${x._key}`),...c.providers.map(x=>`providers/${x._key}`)]);for(const name of ['requires_skill','teaches','offered_by','esco_skill_group','esco_skill_broader','esco_group_broader','esco_skill_knowledge','course_entry_skill'])for(const e of c[name])if(!ids.has(e._from)||!ids.has(e._to))throw new Error(`Dangling ${name}/${e._key}`);
-const direct=new Set(c.teaches.filter(x=>x.evidence_scope==='direct_topic').map(x=>x._to));const essential=c.requires_skill.filter(x=>x.requirement_type==='essential');const covered=essential.filter(x=>direct.has(x._to)).length;if(essential.length!==343||covered!==323)throw new Error(`Coverage ${covered}/${essential.length}`);if(m.version!=='v3.55'||m.records!==5718)throw new Error('Release mismatch');console.log('PASS catalog-v355: 24 collections, 5718 records, 323/343 Essential direct_topic.');
+import fs from 'node:fs';
+const payload = JSON.parse(fs.readFileSync(new URL('../src/data/generated/catalog-v366.json', import.meta.url), 'utf8'));
+const collections = payload.collections;
+const expected = { careers: 12, skills: 420, skill_groups: 149, courses: 510, providers: 183, requires_skill: 932, teaches: 678, offered_by: 510, skill_prerequisite: 6 };
+for (const [name, count] of Object.entries(expected)) if (collections[name]?.length !== count) throw new Error(`${name}: expected ${count}, got ${collections[name]?.length}`);
+const ids = new Set([...collections.careers.map((row) => `careers/${row._key}`), ...collections.skills.map((row) => `skills/${row._key}`), ...collections.skill_groups.map((row) => `skill_groups/${row._key}`), ...collections.courses.map((row) => `courses/${row._key}`), ...collections.providers.map((row) => `providers/${row._key}`)]);
+for (const name of ['requires_skill', 'teaches', 'offered_by', 'esco_skill_group', 'esco_skill_broader', 'esco_group_broader', 'esco_skill_knowledge', 'course_entry_skill', 'skill_prerequisite']) for (const edge of collections[name] || []) if (!ids.has(edge._from) || !ids.has(edge._to)) throw new Error(`Dangling ${name}/${edge._key}`);
+const direct = new Set(collections.teaches.filter((row) => row.evidence_scope === 'direct_topic').map((row) => row._to));
+const essential = collections.requires_skill.filter((row) => row.requirement_type === 'essential');
+const covered = essential.filter((row) => direct.has(row._to)).length;
+if (essential.length !== 343 || covered !== 305) throw new Error(`Coverage ${covered}/${essential.length}`);
+if (payload.release.version !== 'v3.66' || payload.release.records !== 5990) throw new Error('Release mismatch');
+if (Object.keys(collections).some((name) => name.startsWith('auth_'))) throw new Error('Auth collections must not be bundled into the public catalog.');
+console.log('PASS catalog-v366: 25 collections, 5990 records, 305/343 Essential direct_topic.');

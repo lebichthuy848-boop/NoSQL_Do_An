@@ -427,7 +427,7 @@ function GraphWorkspace() {
       );
     else
       setNotice(
-        `Đã thêm ${added.length} node lân cận và quan hệ thực từ v3.55.`,
+        `Đã thêm ${added.length} node lân cận và quan hệ thực từ v3.66.`,
       );
     setTimeout(() => setNotice(null), 6500);
   };
@@ -870,7 +870,7 @@ function EdgeDetails({ edge }: { edge: Edge }) {
       )}
       <p>
         Chiều quan hệ được bảo toàn theo `_from → _to` trong dữ liệu ArangoDB
-        v3.55.
+        v3.66.
       </p>
       {edge.data && (
         <pre>{JSON.stringify(edge.data, null, 2).slice(0, 2200)}</pre>

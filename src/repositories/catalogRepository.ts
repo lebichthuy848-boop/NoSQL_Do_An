@@ -1,4 +1,4 @@
-import payloadRaw from '../data/generated/catalog-v355.json';
+import payloadRaw from '../data/generated/catalog-v366.json';
 import type{Career,CatalogPayload,Course,Edge,Evidence,GraphData,Provider,Raw,Requirement,Skill,SkillGroup}from'../types/catalog';
 const p=payloadRaw as CatalogPayload,c=p.collections;
 const id=(kind:string,key:string)=>`${kind}/${key}`;

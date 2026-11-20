@@ -9,18 +9,17 @@ import {
 import { calculateEssentialSelfDeclaration } from "../features/skillGap/skillGapModel";
 import { validExternalHttpUrl } from "../utils/externalUrl";
 const repo = getCatalogRepository();
-describe("v3.55 catalog repository", () => {
+describe("v3.66 catalog repository", () => {
   it("uses the correct release and core counts", () => {
     expect(repo.getReleaseInfo()).toMatchObject({
-      version: "v3.55",
-      sprint: 92,
-      records: 5718,
+      version: "v3.66",
+      records: 5990,
     });
     expect(repo.getCareers()).toHaveLength(12);
     expect(repo.getSkills()).toHaveLength(420);
     expect(repo.getSkillGroups()).toHaveLength(149);
-    expect(repo.getCourses()).toHaveLength(504);
-    expect(repo.getProviders()).toHaveLength(179);
+    expect(repo.getCourses()).toHaveLength(510);
+    expect(repo.getProviders()).toHaveLength(183);
   });
   it("preserves Data Analyst requirements", () => {
     const c = repo.getCareers().find((x) => x.name === "data analyst")!;
@@ -28,11 +27,11 @@ describe("v3.55 catalog repository", () => {
     expect(r.filter((x) => x.requirementType === "essential")).toHaveLength(36);
     expect(r.filter((x) => x.requirementType === "optional")).toHaveLength(31);
   });
-  it("reports 323/343 direct topic coverage", () => {
+  it("reports 305/343 direct topic coverage", () => {
     const rows = repo.getCoverageReport();
     expect(rows.reduce((n, x) => n + x.essential, 0)).toBe(343);
-    expect(rows.reduce((n, x) => n + x.covered, 0)).toBe(323);
-    expect(repo.getRemainingEssentialGaps()).toHaveLength(20);
+    expect(rows.reduce((n, x) => n + x.covered, 0)).toBe(305);
+    expect(repo.getRemainingEssentialGaps()).toHaveLength(38);
   });
 });
 describe("focused graphs", () => {
@@ -60,7 +59,7 @@ describe("focused graphs", () => {
       .find((x) => repo.getSkillsInGroup(x.id).length > 0)!;
     expect(repo.getTaxonomyGraph(group.id).edges.length).toBeGreaterThan(0);
   });
-  it("matches the Sprint 92 Ansible cases and preserves edge directions", () => {
+  it("matches the v3.66 Ansible cases and preserves edge directions", () => {
     const ansible = repo
         .getSkills()
         .find((x) => x.name.toLowerCase() === "ansible")!,
