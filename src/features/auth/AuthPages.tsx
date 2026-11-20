@@ -42,6 +42,10 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 export function safeReturnPath(path: unknown) {
   return typeof path === 'string' && /^\/(?!\/)/.test(path) && !/[\\\r\n]/.test(path) && !/^\/(login|register|forgot-password|reset-password)(\/|\?|$)/.test(path) ? path : '/account';
 }
+function destinationAfterLogin(role: 'admin' | 'user', target: string) {
+  if (role === 'admin') return target.startsWith('/admin') ? target : '/admin/dashboard';
+  return target.startsWith('/admin') || target === '/403' ? '/account' : target;
+}
 export function validateNewPassword(password: string, confirmation: string) {
   if (password.length < 10 || password.length > 128 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password))
     throw new Error('Mật khẩu cần 10–128 ký tự, gồm chữ hoa, chữ thường và số.');
@@ -53,14 +57,12 @@ export function LoginPage() {
   const navigate = useNavigate(), location = useLocation();
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const target = safeReturnPath(location.state?.from);
-  if (user) return <Navigate to={user.role === 'admin' ? '/admin/dashboard' : target} replace />;
+  if (user) return <Navigate to={destinationAfterLogin(user.role, target)} replace />;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError('');
     try {
       const loggedInUser = await login(value(data, 'email'), value(data, 'password'));
-      const destination = loggedInUser.role === 'admin'
-        ? target.startsWith('/admin') ? target : '/admin/dashboard'
-        : target;
+      const destination = destinationAfterLogin(loggedInUser.role, target);
       navigate(destination, { replace: true });
     }
     catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
