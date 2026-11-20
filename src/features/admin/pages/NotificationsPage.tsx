@@ -5,12 +5,11 @@ import { useAdminStore } from '../store/adminStore';
 export default function NotificationsPage() {
   const [read, setRead] = useState<string[]>([]); const markAll = () => setRead(['prereq', 'catalog', 'review']);
   const catalogStatus = useAdminStore((s) => s.catalogStatus);
-  const catalogDatabase = useAdminStore((s) => s.catalogDatabase);
   const catalogError = useAdminStore((s) => s.catalogError);
   const notices = [
     { id: 'prereq', kind: 'quality', title: 'Chưa có prerequisite edge trong catalog hiện tại', detail: 'Kiểm tra release trước khi xây dựng learning path dựa trên tiên quyết.', to: '/admin/skill-prerequisites', icon: AlertTriangle, tone: 'amber' },
     catalogStatus === 'live'
-      ? { id: 'catalog', kind: 'system', title: 'Catalog đã đồng bộ trực tiếp', detail: `Admin đang đọc dữ liệu mới nhất từ ${catalogDatabase}.`, to: '/admin/database', icon: Info, tone: 'violet' }
+      ? { id: 'catalog', kind: 'system', title: 'Catalog đã đồng bộ trực tiếp', detail: 'Admin đang đọc dữ liệu mới nhất từ ArangoDB.', to: '/admin/database', icon: Info, tone: 'violet' }
       : { id: 'catalog', kind: 'quality', title: catalogStatus === 'loading' ? 'Đang tải catalog từ ArangoDB' : 'Chưa đồng bộ được catalog live', detail: catalogError || 'Admin tạm hiển thị snapshot dự phòng; hãy kiểm tra Auth API và quyền đọc database.', to: '/admin/database', icon: AlertTriangle, tone: 'amber' },
   ];
   const pending = useAdminStore((s) => (s.records.courses || []).filter((row) => row.review_status === 'pending' || (!row.review_status && row.recommendation_eligible !== true)).length);

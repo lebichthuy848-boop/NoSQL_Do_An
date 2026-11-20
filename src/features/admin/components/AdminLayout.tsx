@@ -33,7 +33,6 @@ const nav = [
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const catalogStatus = useAdminStore((s) => s.catalogStatus);
-  const catalogDatabase = useAdminStore((s) => s.catalogDatabase);
   const catalogFetchedAt = useAdminStore((s) => s.catalogFetchedAt);
   const catalogError = useAdminStore((s) => s.catalogError);
   const loadLiveCatalog = useAdminStore((s) => s.loadLiveCatalog);
@@ -54,7 +53,7 @@ export default function AdminLayout() {
       </nav>
       <div className="admin-sidebar-bottom">
         <Link to="/" className="admin-nav-link"><CircleHelp size={18} /><span>Về website</span></Link>
-        <div className="admin-sidebar-version"><span className={`admin-status-dot ${catalogStatus}`} /> {catalogStatus === 'live' ? `Live · ${catalogDatabase}` : catalogStatus === 'loading' ? 'Đang tải ArangoDB…' : 'Snapshot dự phòng'}</div>
+        <div className="admin-sidebar-version"><span className={`admin-status-dot ${catalogStatus}`} /> {catalogStatus === 'live' ? 'Live · ArangoDB' : catalogStatus === 'loading' ? 'Đang tải ArangoDB…' : 'Snapshot dự phòng'}</div>
         <button className="admin-collapse" onClick={() => setCollapsed(!collapsed)}>{collapsed ? <ChevronRight size={17} /> : <><ChevronLeft size={17} /> Thu gọn menu</>}</button>
       </div>
     </aside>
@@ -67,7 +66,7 @@ export default function AdminLayout() {
         <div className="admin-user-menu"><span className="admin-avatar">{(user?.name || 'A').slice(0, 1).toUpperCase()}</span><span className="admin-user-copy"><strong>{user?.name || 'Admin'}</strong><small>Quản trị viên</small></span><ChevronDown size={15} /><button title="Đăng xuất" onClick={() => void logout()}><LogOut size={16} /></button></div>
       </header>
       <main className="admin-content" data-admin-search={search}>
-        <div className={`admin-db-sync ${catalogStatus}`} role="status">{catalogStatus === 'live' ? <><CheckCircle2 size={15} /><span><strong>Dữ liệu mới nhất</strong> · Đọc trực tiếp từ <b>{catalogDatabase}</b>{catalogFetchedAt ? ` · ${new Date(catalogFetchedAt * 1000).toLocaleTimeString('vi-VN')}` : ''}</span><button onClick={() => void loadLiveCatalog()} title="Tải lại từ ArangoDB"><RefreshCw size={14} /> Làm mới</button></> : catalogStatus === 'loading' ? <><RefreshCw className="admin-spin" size={15} /><span>Đang tải dữ liệu mới nhất từ ArangoDB…</span></> : <><span className="admin-sync-warn">!</span><span><strong>Chưa tải được dữ liệu live.</strong> {catalogError || 'Đang hiển thị snapshot dự phòng.'}</span><button onClick={() => void loadLiveCatalog()}><RefreshCw size={14} /> Thử lại</button></>}</div>
+        <div className={`admin-db-sync ${catalogStatus}`} role="status">{catalogStatus === 'live' ? <><CheckCircle2 size={15} /><span><strong>Dữ liệu mới nhất</strong> · Đọc trực tiếp từ <b>ArangoDB</b>{catalogFetchedAt ? ` · ${new Date(catalogFetchedAt * 1000).toLocaleTimeString('vi-VN')}` : ''}</span><button onClick={() => void loadLiveCatalog()} title="Tải lại từ ArangoDB"><RefreshCw size={14} /> Làm mới</button></> : catalogStatus === 'loading' ? <><RefreshCw className="admin-spin" size={15} /><span>Đang tải dữ liệu mới nhất từ ArangoDB…</span></> : <><span className="admin-sync-warn">!</span><span><strong>Chưa tải được dữ liệu live.</strong> {catalogError || 'Đang hiển thị snapshot dự phòng.'}</span><button onClick={() => void loadLiveCatalog()}><RefreshCw size={14} /> Thử lại</button></>}</div>
         <Outlet context={{ search }} /></main>
     </section>
   </div>;

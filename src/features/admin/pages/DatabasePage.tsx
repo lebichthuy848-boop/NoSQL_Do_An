@@ -15,7 +15,6 @@ export default function DatabasePage() {
   const requires = useAdminStore((s) => s.records.requires_skill || []);
   const prerequisite = useAdminStore((s) => s.records.prerequisite || []);
   const catalogStatus = useAdminStore((s) => s.catalogStatus);
-  const catalogDatabase = useAdminStore((s) => s.catalogDatabase);
   const loadLiveCatalog = useAdminStore((s) => s.loadLiveCatalog);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -45,14 +44,14 @@ export default function DatabasePage() {
     try {
       const payload = await authRequest<{ database: string; collections: Record<string, unknown[]> }>('admin/export');
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${payload.database || 'skillgraph'}-database-export.json`; link.click(); URL.revokeObjectURL(url);
+      const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'skillgraph-database-export.json'; link.click(); URL.revokeObjectURL(url);
     } catch (cause) { setExportError(cause instanceof Error ? cause.message : 'Không xuất được dữ liệu ArangoDB.'); }
     finally { setExporting(false); }
   };
   const live = catalogStatus === 'live';
   return <div className="admin-page"><div className="admin-page-heading"><div><div className="admin-eyebrow">DATABASE OPERATIONS</div><h1>Quản trị Database</h1><p>Thống kê các collection danh mục được nạp từ database hiện tại.</p></div><div className="admin-heading-actions"><button className="admin-btn" onClick={() => void loadLiveCatalog()}><RefreshCw size={15} /> Đồng bộ lại</button><button className="admin-btn" onClick={() => void exportJson()} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export JSON'}</button></div></div>
     {exportError && <div className="admin-users-error" role="alert">{exportError}<button className="admin-btn" onClick={() => setExportError('')}>Đóng</button></div>}
-    <div className="admin-db-summary"><div><span><Server size={18} /></span><small>Database</small><strong>{live ? catalogDatabase : 'ArangoDB · chưa đồng bộ'}</strong><i className="admin-db-note">{live ? 'Đọc và ghi trực tiếp qua API' : 'Dữ liệu chưa đồng bộ'}</i></div><div><span><Layers3 size={18} /></span><small>Collections danh mục</small><strong>{collections.length}</strong><i className="admin-db-note">{all.toLocaleString('vi-VN')} documents & edges</i></div><div><span><HardDrive size={18} /></span><small>Dangling endpoints</small><strong>{integrity}</strong><i className={integrity ? 'admin-db-warning' : 'admin-db-note'}>{integrity ? 'Cần rà soát quan hệ' : live ? 'Không phát hiện trong quan hệ cốt lõi' : 'Kiểm tra trên dữ liệu hiện có'}</i></div></div>
+    <div className="admin-db-summary"><div><span><Server size={18} /></span><small>Database</small><strong>{live ? 'ArangoDB · đã đồng bộ' : 'ArangoDB · chưa đồng bộ'}</strong><i className="admin-db-note">{live ? 'Đọc và ghi trực tiếp qua API' : 'Dữ liệu chưa đồng bộ'}</i></div><div><span><Layers3 size={18} /></span><small>Collections danh mục</small><strong>{collections.length}</strong><i className="admin-db-note">{all.toLocaleString('vi-VN')} documents & edges</i></div><div><span><HardDrive size={18} /></span><small>Dangling endpoints</small><strong>{integrity}</strong><i className={integrity ? 'admin-db-warning' : 'admin-db-note'}>{integrity ? 'Cần rà soát quan hệ' : live ? 'Không phát hiện trong quan hệ cốt lõi' : 'Kiểm tra trên dữ liệu hiện có'}</i></div></div>
     <section className="admin-panel"><div className="admin-panel-head"><div><h2>Collections danh mục</h2><p>Số lượng được đọc từ backend của ứng dụng.</p></div><button className="admin-icon-button" onClick={() => void loadLiveCatalog()} aria-label="Đồng bộ dữ liệu từ ArangoDB"><RefreshCw size={16} /></button></div><div className="admin-collection-grid">{collections.map((collection) => <div className="admin-collection-card" key={collection.name}><span className={collection.edges ? 'edge' : ''}><Database size={16} /></span><div><strong>{collection.name}</strong><small>{collection.edges ? 'Edge collection' : 'Document collection'}</small></div><b>{collection.count.toLocaleString('vi-VN')}</b></div>)}</div></section>
   </div>;
 }

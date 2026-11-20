@@ -5,7 +5,6 @@ import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import {
   ArrowLeft,
   ArrowRight,
-  BarChart3,
   BookmarkCheck,
   BookmarkPlus,
   BookOpen,
@@ -28,8 +27,8 @@ import { calculateEssentialSelfDeclaration } from "./features/skillGap/skillGapM
 import { useUserStore } from "./stores/userStore";
 import type { Career, Course, Skill } from "./types/catalog";
 import { validExternalHttpUrl } from "./utils/externalUrl";
+import { useAuth } from "./features/auth/AuthProvider";
 import GraphExplorer from "./features/graph/GraphExplorer";
-import StatisticsDashboard from "./features/statistics/StatisticsDashboard";
 import MyLearningPage from "./features/learning/MyLearningPage";
 import { AccountPage, AuthHeader, ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage } from "./features/auth/AuthPages";
 import AdminLayout, { AdminGate } from "./features/admin/components/AdminLayout";
@@ -69,7 +68,6 @@ function App() {
     ["/resources", "Học liệu"],
     ["/providers", "Nhà cung cấp"],
     ["/graph", "Skill Graph"],
-    ["/statistics", "Thống kê"],
     ["/data-quality", "Chất lượng dữ liệu"],
   ];
   return (
@@ -90,7 +88,6 @@ function App() {
             </NavLink>
           ))}
         </nav>
-        <span className="version">v3.66 · LIVE DB</span>
         <AuthHeader />
         <Link className="header-cta" to="/careers">
           Khám phá nghề
@@ -159,6 +156,7 @@ function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/403" element={<ForbiddenPage />} />
+          <Route path="/statistics" element={<StatisticsRedirect />} />
           <Route element={<AdminGate />}>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Navigate to="/admin/dashboard" replace />} />
@@ -193,7 +191,6 @@ function App() {
           <Route path="/skill-gap" element={<SkillGap />} />
           <Route path="/learning-path" element={<LearningPath />} />
           <Route path="/my-learning" element={<MyLearning />} />
-          <Route path="/statistics" element={<Statistics />} />
           <Route path="/data-quality" element={<DataQuality />} />
           <Route path="/about" element={<About />} />
           <Route path="*" element={<NotFound />} />
@@ -206,7 +203,7 @@ function App() {
           </span>
           SkillGraph
         </div>
-        <p>React Frontend → ArangoDB v3.66</p>
+        <p>Khám phá nghề nghiệp và kỹ năng cùng SkillGraph</p>
         <Link to="/about">Giới thiệu & giới hạn dữ liệu</Link>
       </footer>
     </div>
@@ -301,7 +298,7 @@ function Home() {
           transition={{ duration: 0.6 }}
         >
           <div className="eyebrow">
-            <span /> ARANGODB · V3.66
+            <span /> CAREER & SKILL GRAPH
           </div>
           <h1>
             Khám phá kỹ năng —<br />
@@ -323,7 +320,7 @@ function Home() {
             </Link>
           </div>
           <small className="notice">
-            v3.66 · Đồng bộ từ skill_graph_v366_acceptance
+            Dữ liệu được đồng bộ từ cơ sở dữ liệu SkillGraph.
           </small>
         </motion.div>
         <motion.div
@@ -395,8 +392,8 @@ function Home() {
               direct_topic
             </h2>
           </div>
-          <Link className="text-link" to="/statistics">
-            Xem thống kê <ArrowRight />
+          <Link className="text-link" to="/careers">
+            Khám phá nghề nghiệp <ArrowRight />
           </Link>
         </div>
         <div className="steps">
@@ -1250,9 +1247,6 @@ function LearningPath() {
 function MyLearning() {
   return <MyLearningPage />;
 }
-function Statistics() {
-  return <StatisticsDashboard />;
-}
 function DataQuality() {
   const p = repo.getRaw(),
     m = p.manifest as any;
@@ -1264,7 +1258,7 @@ function DataQuality() {
         text="Kết quả validation offline, không phải xác minh database live."
       />
       <div className="stat-summary">
-        <Metric v={m.version} l="Release" />
+        <Metric v="Catalog" l="Nguồn dữ liệu" />
         <Metric v={m.records} l="Records" />
         <Metric
           v={m.external_arangodb_verified ? "Có" : "Chưa"}
@@ -1300,6 +1294,11 @@ function DataQuality() {
     </div>
   );
 }
+function StatisticsRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="container" role="status">Đang chuyển tới trang tổng quan…</div>;
+  return <Navigate to={user?.role === "admin" ? "/admin/dashboard" : "/dashboard"} replace />;
+}
 function About() {
   return (
     <div className="container">
@@ -1311,7 +1310,7 @@ function About() {
       <div className="steps">
         <Info
           n="HIỆN TẠI"
-          t="React → ArangoDB v3.66 Catalog"
+          t="Catalog Career – Skill – Course"
           x="Demo đọc dữ liệu build-time, không kết nối trực tiếp database."
         />
         <Info
@@ -1345,7 +1344,7 @@ const NotFound = () => (
     <Head
       tag="404"
       title="Không tìm thấy trang"
-      text="Đường dẫn hoặc ID không tồn tại trong release v3.66."
+      text="Đường dẫn hoặc ID không tồn tại."
     />
     <Link className="btn primary" to="/">
       Về trang chủ

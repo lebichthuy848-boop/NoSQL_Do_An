@@ -12,7 +12,6 @@ const seeded = Object.fromEntries(
 type AdminState = {
   records: Partial<Record<AdminCollection, AdminRecord[]>>;
   catalogStatus: 'loading' | 'live' | 'error';
-  catalogDatabase: string;
   catalogFetchedAt: number | null;
   catalogError: string | null;
   loadLiveCatalog: () => Promise<void>;
@@ -35,14 +34,13 @@ const putLog = (logs: AdminLog[], actor: string, action: string, target: string,
 export const useAdminStore = create<AdminState>()(persist((set, get) => ({
   records: seeded,
   catalogStatus: 'loading',
-  catalogDatabase: '',
   catalogFetchedAt: null,
   catalogError: null,
   loadLiveCatalog: async () => {
     set({ catalogStatus: 'loading', catalogError: null });
     try {
       const response = await fetch('/api/auth/admin/catalog', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-      const payload = await response.json() as { message?: string; database?: string; fetchedAt?: number; collections?: Partial<Record<AdminCollection, AdminRecord[]>> };
+      const payload = await response.json() as { message?: string; fetchedAt?: number; collections?: Partial<Record<AdminCollection, AdminRecord[]>> };
       if (!response.ok) throw new Error(payload.message || 'Không tải được catalog từ ArangoDB.');
       if (!payload.collections || typeof payload.collections !== 'object') throw new Error('API không trả về danh mục hợp lệ.');
       const liveCollections: Partial<Record<AdminCollection, AdminRecord[]>> = {};
@@ -51,7 +49,7 @@ export const useAdminStore = create<AdminState>()(persist((set, get) => ({
         if (!Array.isArray(rows)) throw new Error(`Thiếu collection ${name} trong dữ liệu ArangoDB.`);
         liveCollections[name] = rows;
       });
-      set((state) => ({ records: { ...state.records, ...liveCollections }, catalogStatus: 'live', catalogDatabase: payload.database || 'ArangoDB', catalogFetchedAt: payload.fetchedAt || Date.now() / 1000, catalogError: null }));
+      set((state) => ({ records: { ...state.records, ...liveCollections }, catalogStatus: 'live', catalogFetchedAt: payload.fetchedAt || Date.now() / 1000, catalogError: null }));
     } catch (error) {
       set({ catalogStatus: 'error', catalogError: error instanceof Error ? error.message : 'Không thể kết nối ArangoDB.' });
     }

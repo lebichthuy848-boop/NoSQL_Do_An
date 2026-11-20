@@ -44,7 +44,7 @@ export default function StatisticsDashboard() {
   return (
     <div className="container">
       <div className="page-head">
-        <div className="eyebrow">V3.55 DATA DASHBOARD</div>
+        <div className="eyebrow">TỔNG QUAN DỮ LIỆU</div>
         <h1>Thống kê dữ liệu</h1>
         <p>
           Coverage phản ánh liên kết direct_topic, không phải career fit score
@@ -53,7 +53,7 @@ export default function StatisticsDashboard() {
       </div>
       <div className="stat-summary">
         <div>
-          <strong>5.718</strong>
+          <strong>{Number(m.records).toLocaleString("vi-VN")}</strong>
           <span>Tổng bản ghi</span>
         </div>
         <div>
