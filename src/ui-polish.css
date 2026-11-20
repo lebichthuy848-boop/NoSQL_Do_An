@@ -47,8 +47,8 @@ textarea {
 .site-header {
   height: 82px;
   width: 100%;
-  padding: 0 clamp(20px, 3.2vw, 64px);
-  gap: clamp(16px, 2vw, 32px);
+  padding: 0 clamp(20px, 2.4vw, 46px);
+  gap: clamp(12px, 1.25vw, 24px);
   background: color-mix(in srgb, var(--panel) 86%, transparent);
   border-bottom: 1px solid var(--border);
   z-index: 100;
@@ -66,12 +66,15 @@ textarea {
   width: 21px;
 }
 .desktop-nav {
-  gap: clamp(12px, 1.35vw, 25px);
+  flex: 1 1 auto;
+  justify-content: space-between;
+  gap: clamp(8px, 0.8vw, 15px);
   min-width: 0;
 }
 .desktop-nav a {
+  flex: 0 0 auto;
   position: relative;
-  font-size: 0.88rem;
+  font-size: clamp(0.76rem, 0.74vw, 0.88rem);
   font-weight: 600;
   white-space: nowrap;
   padding: 29px 0 27px;
@@ -93,6 +96,7 @@ textarea {
   right: 0;
 }
 .version {
+  flex: 0 0 auto;
   font-size: 0.7rem;
   font-weight: 700;
   padding: 7px 11px;
@@ -633,12 +637,32 @@ footer {
     transition-duration: 0.01ms !important;
   }
 }
-@media (max-width: 1280px) {
-  .desktop-nav {
+@media (max-width: 1700px) {
+  .site-header {
+    padding-inline: 26px;
     gap: 14px;
   }
+  .desktop-nav {
+    gap: 10px;
+  }
   .desktop-nav a {
-    font-size: 0.78rem;
+    font-size: 0.76rem;
+  }
+  .version {
+    display: none;
+  }
+}
+@media (max-width: 1450px) {
+  .header-cta {
+    display: none;
+  }
+}
+@media (max-width: 1280px) {
+  .desktop-nav {
+    gap: 8px;
+  }
+  .desktop-nav a {
+    font-size: 0.72rem;
   }
   .header-cta {
     display: none;
@@ -647,7 +671,7 @@ footer {
     grid-template-columns: 1fr 480px;
   }
 }
-@media (max-width: 1050px) {
+@media (max-width: 1180px) {
   .desktop-nav {
     display: none;
   }
