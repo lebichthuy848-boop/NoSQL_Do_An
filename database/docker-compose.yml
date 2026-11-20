@@ -1,0 +1,15 @@
+services:
+  arangodb:
+    image: arangodb:3.12.11
+    container_name: skillgraph-team-db
+    environment:
+      ARANGO_ROOT_PASSWORD: skillgraph-root-123456
+    ports:
+      - "127.0.0.1:8530:8529"
+    volumes:
+      - skillgraph-team-data:/var/lib/arangodb3
+      - ./arangodb-dump:/dump:ro
+    restart: unless-stopped
+
+volumes:
+  skillgraph-team-data:

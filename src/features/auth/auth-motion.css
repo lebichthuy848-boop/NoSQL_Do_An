@@ -1,0 +1,39 @@
+
+/* Auth motion: enter once, ambient illustration, and interactive feedback. */
+@keyframes auth-enter{from{opacity:0;transform:translateY(20px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes auth-reveal{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes auth-float{0%,100%{transform:translateY(0) rotate(var(--auth-tilt,0deg))}50%{transform:translateY(-10px) rotate(calc(var(--auth-tilt,0deg) + 2deg))}}
+@keyframes auth-orbit-spin{to{transform:rotate(360deg)}}
+@keyframes auth-halo{0%,100%{opacity:.4;transform:scale(.9)}50%{opacity:.8;transform:scale(1.1)}}
+@keyframes auth-gradient-flow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+@keyframes auth-dot-breathe{0%,100%{box-shadow:0 0 0 0 #8b5cf633}65%{box-shadow:0 0 0 6px #8b5cf600}}
+@keyframes auth-particle-drift{0%,100%{transform:translateY(0);opacity:.35}50%{transform:translateY(-20px);opacity:.8}}
+@keyframes auth-notice-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes auth-progress{to{background-position:200% 0}}
+.auth-layout{animation:auth-enter .7s cubic-bezier(.2,.75,.25,1) both}
+.auth-story .auth-logo,.auth-story .auth-kicker,.auth-story h1,.auth-story>p,.auth-trust{animation:auth-reveal .65s cubic-bezier(.2,.75,.25,1) both}
+.auth-story .auth-logo{animation-delay:.08s}.auth-story .auth-kicker{animation-delay:.16s}.auth-story h1{animation-delay:.24s}.auth-story>p{animation-delay:.32s}.auth-trust{animation-delay:.6s}
+.auth-story h1 span{background-size:200% 100%;animation:auth-gradient-flow 7s ease-in-out infinite}
+.auth-kicker::before,.auth-node::before{animation:auth-dot-breathe 3.5s ease-out infinite}
+.auth-orbit{animation:auth-reveal .9s .4s both}
+.auth-orbit::before{animation:auth-orbit-spin 36s linear infinite;border-top-color:#8b5cf6;border-right-color:#c4b5fd}
+.auth-orbit::after{content:'';position:absolute;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,#a78bfa42,transparent 68%);animation:auth-halo 5s ease-in-out infinite;pointer-events:none}
+.auth-orbit>svg{animation:auth-float 5s ease-in-out infinite;transition:box-shadow .3s}
+.auth-node{animation:auth-float 5s ease-in-out infinite;transition:box-shadow .3s,border-color .3s}
+.auth-node-career{--auth-tilt:-5deg;animation-delay:-1s}.auth-node-skill{--auth-tilt:5deg;animation-duration:6s;animation-delay:-2.8s}.auth-node-resource{--auth-tilt:-3deg;animation-duration:5.5s;animation-delay:-3.8s}
+.auth-orbit:hover>svg{box-shadow:0 12px 36px #7c3aed55}.auth-orbit:hover .auth-node{border-color:#b5a5ee;box-shadow:0 9px 24px #6366f11f}
+.auth-card>.auth-card-icon,.auth-card>h2,.auth-card>.auth-subtitle,.auth-card>.auth-form,.auth-card>.auth-switch,.auth-card>.auth-home,.auth-card>.auth-profile{animation:auth-reveal .65s cubic-bezier(.2,.75,.25,1) both}
+.auth-card>.auth-card-icon{animation-delay:.15s}.auth-card>h2{animation-delay:.22s}.auth-card>.auth-subtitle{animation-delay:.29s}.auth-card>.auth-form,.auth-card>.auth-profile{animation-delay:.36s}.auth-card>.auth-switch{animation-delay:.46s}.auth-card>.auth-home{animation-delay:.54s}
+.auth-form .auth-field{animation:auth-reveal .55s ease both;animation-delay:.4s}.auth-form .auth-field:nth-of-type(2){animation-delay:.48s}.auth-form .auth-field:nth-of-type(3){animation-delay:.56s}.auth-form .auth-field:nth-of-type(4){animation-delay:.64s}
+.auth-field{transition:color .2s}.auth-field:focus-within{color:#7760df}.auth-field input{transition:border-color .25s,box-shadow .25s,background-color .25s}.auth-field input:focus{background:color-mix(in srgb,var(--panel,#fff) 97%,#8b5cf6)}
+.auth-card-icon{transition:transform .3s,box-shadow .3s}.auth-card-icon:hover{transform:rotate(-8deg) scale(1.08);box-shadow:0 6px 20px #8b5cf61f}
+.auth-submit{position:relative;isolation:isolate;overflow:hidden;background-size:180% 100%;transition:transform .25s,box-shadow .25s,filter .25s,background-position .5s}
+.auth-submit::after{content:'';position:absolute;inset:-50% auto -50% -60%;width:36%;background:linear-gradient(90deg,transparent,#ffffff30,transparent);transform:skewX(-20deg);pointer-events:none;transition:left .65s}
+.auth-submit:not(:disabled):hover{transform:translateY(-2px);background-position:100% 50%;box-shadow:0 10px 26px #6366f13b}.auth-submit:not(:disabled):hover::after{left:130%}.auth-submit:not(:disabled):active{transform:translateY(0) scale(.985)}
+.auth-submit svg{transition:transform .25s}.auth-submit:hover svg{transform:translateX(4px)}
+.auth-submit:disabled{background-image:linear-gradient(110deg,#4f46e5,#8b5cf6,#4f46e5);background-size:200% 100%;animation:auth-progress 2s linear infinite}
+.auth-password button{transition:color .2s,background-color .2s}.auth-password button:hover{color:#7c3aed;background:#8b5cf610}
+.auth-header-link,.auth-logout{transition:transform .2s,background-color .2s,box-shadow .2s}.auth-header-link:hover{transform:translateY(-1px);box-shadow:0 4px 12px #7c3aed12}.auth-logout:hover{background:#8b5cf609}
+.auth-notice{animation:auth-notice-in .3s ease-out both}
+.auth-sparkles{position:absolute;inset:0;z-index:-1;pointer-events:none;overflow:hidden}.auth-sparkles i{position:absolute;width:5px;height:5px;border-radius:50%;background:#9d88ed;animation:auth-particle-drift 6s ease-in-out infinite}.auth-sparkles i:nth-child(1){left:8%;top:42%;animation-delay:-1s}.auth-sparkles i:nth-child(2){left:87%;top:20%;width:4px;height:4px;animation-delay:-3s}.auth-sparkles i:nth-child(3){left:77%;top:77%;animation-delay:-2s}.auth-sparkles i:nth-child(4){left:17%;top:87%;width:3px;height:3px;animation-delay:-4s}.auth-sparkles i:nth-child(5){left:65%;top:52%;width:3px;height:3px;animation-delay:-5s}
+@media(prefers-reduced-motion:reduce){.auth-layout,.auth-layout *,.auth-layout *::before,.auth-layout *::after,.auth-header-link{animation:none!important;transition:none!important}.auth-submit:hover,.auth-submit:active,.auth-card-icon:hover,.auth-header-link:hover{transform:none}.auth-node-career{transform:rotate(-5deg)}.auth-node-skill{transform:rotate(5deg)}.auth-node-resource{transform:rotate(-3deg)}}

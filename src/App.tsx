@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, NavLink, Route, Routes, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import {
@@ -31,11 +31,28 @@ import { validExternalHttpUrl } from "./utils/externalUrl";
 import GraphExplorer from "./features/graph/GraphExplorer";
 import StatisticsDashboard from "./features/statistics/StatisticsDashboard";
 import MyLearningPage from "./features/learning/MyLearningPage";
+import { AccountPage, AuthHeader, ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage } from "./features/auth/AuthPages";
+import AdminLayout, { AdminGate } from "./features/admin/components/AdminLayout";
+import AdminDashboardPage from "./features/admin/pages/AdminDashboardPage";
+import UsersPage from "./features/admin/pages/UsersPage";
+import CareersPage from "./features/admin/pages/CareersPage";
+import SkillsPage from "./features/admin/pages/SkillsPage";
+import ProvidersPage from "./features/admin/pages/ProvidersPage";
+import CoursesPage from "./features/admin/pages/CoursesPage";
+import CourseSkillMappingsPage from "./features/admin/pages/CourseSkillMappingsPage";
+import CareerSkillsPage from "./features/admin/pages/CareerSkillsPage";
+import SkillPrerequisitesPage from "./features/admin/pages/SkillPrerequisitesPage";
+import DatabasePage from "./features/admin/pages/DatabasePage";
+import ActivityLogsPage from "./features/admin/pages/ActivityLogsPage";
+import NotificationsPage from "./features/admin/pages/NotificationsPage";
+import AdminAccountPage from "./features/admin/pages/AdminAccountPage";
+import ForbiddenPage from "./features/admin/pages/ForbiddenPage";
 const repo = getCatalogRepository(),
   PAGE = 18;
 const pretty = (s: string) =>
   s.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
 function App() {
+  const isAdminRoute = useLocation().pathname.startsWith("/admin");
   const [dark, setDark] = useState(
       () => localStorage.getItem("theme") === "dark",
     ),
@@ -56,7 +73,7 @@ function App() {
     ["/data-quality", "Chất lượng dữ liệu"],
   ];
   return (
-    <div className="app">
+    <div className={`app${isAdminRoute ? " admin-host" : ""}`}>
       <header className="site-header">
         <Link className="brand" to="/" aria-label="SkillGraph - Trang chủ">
           <span className="brand-mark">
@@ -74,6 +91,7 @@ function App() {
           ))}
         </nav>
         <span className="version">v3.55 · S92</span>
+        <AuthHeader />
         <Link className="header-cta" to="/careers">
           Khám phá nghề
         </Link>
@@ -135,6 +153,30 @@ function App() {
       </AnimatePresence>
       <main>
         <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/account" element={<AccountPage />} />
+          <Route path="/403" element={<ForbiddenPage />} />
+          <Route element={<AdminGate />}>
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to="/admin/dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboardPage />} />
+              <Route path="users" element={<UsersPage />} />
+              <Route path="careers" element={<CareersPage />} />
+              <Route path="skills" element={<SkillsPage />} />
+              <Route path="providers" element={<ProvidersPage />} />
+              <Route path="courses" element={<CoursesPage />} />
+              <Route path="course-skill-mappings" element={<CourseSkillMappingsPage />} />
+              <Route path="career-skills" element={<CareerSkillsPage />} />
+              <Route path="skill-prerequisites" element={<SkillPrerequisitesPage />} />
+              <Route path="database" element={<DatabasePage />} />
+              <Route path="logs" element={<ActivityLogsPage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="account" element={<AdminAccountPage />} />
+            </Route>
+          </Route>
           <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/careers" element={<Careers />} />

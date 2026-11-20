@@ -1,8 +1,24 @@
 # SkillGraph — Career & Learning Explorer
 
-Frontend React 19 + TypeScript cho dữ liệu **Skill Graph v3.55 / Sprint 92 (TEAM PREVIEW)**.
+Frontend React 19 + TypeScript, backend Python và ArangoDB cho dữ liệu **Skill Graph v3.66**.
 
-## Chạy local
+## Chạy đầy đủ bằng database dùng chung
+
+Yêu cầu: Node.js, Python 3.10+ và Docker Desktop.
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\database\restore.ps1
+Copy-Item .\server\auth\.env.example .\server\auth\.env
+npm install
+```
+
+Sau đó chạy `npm run auth:dev` và `npm run dev` ở hai terminal riêng. Mở `http://localhost:5174`.
+
+Tài khoản Website Admin dùng để test: `admin` / `123456`.
+
+Chi tiết database và các tài khoản local nằm tại [database/README.md](database/README.md).
+
+## Chạy frontend cũ
 
 ```bash
 npm install
@@ -33,3 +49,7 @@ Mặc định `VITE_DATA_SOURCE=local`. Chế độ `api` được dành cho Pyt
 - Validation là offline; database live chưa được xác minh trong frontend.
 
 Xem thêm [Data version](docs/DATA_VERSION.md) và [API contract đề xuất](docs/PROPOSED_API_CONTRACT.md).
+
+## Đăng ký, đăng nhập, quên mật khẩu
+
+Đã bổ sung module frontend trong src/features/auth và backend Python trong server/auth. Xem hướng dẫn cấu hình ArangoDB, SMTP và cách chạy tại server/auth/README.md. Backend không tự tạo collection/index. Chạy npm run auth:dev ở terminal riêng trước khi dùng các trang xác thực.

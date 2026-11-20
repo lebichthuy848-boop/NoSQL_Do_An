@@ -1,0 +1,16 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { KeyRound, LockKeyhole, LogOut, ShieldCheck, UserRound } from 'lucide-react';
+import { authRequest, useAuth } from '../../auth/AuthProvider';
+
+export default function AdminAccountPage() {
+  const { user, logout, refresh } = useAuth(); const [name, setName] = useState(user?.name || ''); const [saved, setSaved] = useState(false); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
+  async function saveProfile() {
+    setSaving(true); setSaved(false); setError('');
+    try { await authRequest('admin/account', { name }); await refresh(); setSaved(true); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Không thể cập nhật hồ sơ.'); }
+    finally { setSaving(false); }
+  }
+  return <div className="admin-page"><div className="admin-page-heading"><div><div className="admin-eyebrow">ADMIN PROFILE</div><h1>Tài khoản Admin</h1><p>Thông tin hồ sơ và bảo mật phiên quản trị.</p></div><span className="admin-role-pill"><ShieldCheck size={14} /> ADMIN</span></div><div className="admin-account-grid"><section className="admin-panel admin-account-profile"><div className="admin-profile-cover" /><span className="admin-account-avatar">{(user?.name || 'A').slice(0, 1).toUpperCase()}</span><div className="admin-account-title"><h2>{user?.name}</h2><span className="admin-status approved">Quản trị viên</span></div><p>Quyền được xác nhận từ session API.</p><label className="admin-form-field">Tên hiển thị<input value={name} onChange={(e) => setName(e.target.value)} /></label><label className="admin-form-field">Tên đăng nhập<input value={user?.username || '—'} readOnly /></label><label className="admin-form-field">Email<input value={user?.email || 'Chưa gắn email'} readOnly /></label><button className="admin-btn primary" disabled={saving || !name.trim()} onClick={() => void saveProfile()}><UserRound size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>{saved && <small className="admin-preview-hint">Hồ sơ đã cập nhật trong ArangoDB.</small>}{error && <div className="admin-form-error">{error}</div>}</section>
+      <div className="admin-account-side"><section className="admin-panel"><div className="admin-panel-head"><div><h2>Bảo mật</h2><p>Phiên xác thực hiện tại</p></div><LockKeyhole size={18} /></div><div className="admin-security-row"><span><ShieldCheck size={17} /></span><div><strong>Cookie phiên HttpOnly</strong><small>Được quản lý bởi backend</small></div><b className="admin-security-ok">Bật</b></div><div className="admin-security-row"><span><KeyRound size={17} /></span><div><strong>Mật khẩu</strong><small>Đổi mật khẩu qua luồng quên mật khẩu</small></div><Link to="/forgot-password">Mở</Link></div><div className="admin-security-row"><span><UserRound size={17} /></span><div><strong>Vai trò</strong><small>Quyền Admin</small></div><b className="admin-security-ok">Đang xác thực</b></div></section><section className="admin-panel admin-logout-panel"><h2>Kết thúc phiên</h2><p>Đăng xuất khỏi bảng quản trị trên thiết bị này.</p><button className="admin-btn danger" onClick={() => void logout()}><LogOut size={16} /> Đăng xuất</button></section></div></div></div>;
+}
