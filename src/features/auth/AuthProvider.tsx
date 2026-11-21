@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { apiRequest, ApiError } from '../../api/http';
 import { useUserStore } from '../../stores/userStore';
 
@@ -15,7 +15,7 @@ type AuthState = {
   user: AuthUser | null;
   loading: boolean;
   error: string;
-  refresh: () => Promise<void>;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
   login: (email: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   completePasswordChange: () => void;
@@ -24,6 +24,7 @@ type AuthState = {
   updateDisplayName: (displayName: string) => Promise<AuthUser>;
 };
 const AuthContext = createContext<AuthState | null>(null);
+const AUTH_REFRESH_TIMEOUT_MS = 25_000;
 
 export function isUnauthorizedSessionError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
@@ -76,28 +77,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [passwordChangedNotice, setPasswordChangedNotice] = useState(false);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const sessionRevision = useRef(0);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await apiRequest<unknown>('/auth/me');
-      setUser(normalizeUser(result));
-      setError('');
-    } catch (cause) {
-      if (isUnauthorizedSessionError(cause)) {
-        setUser(null);
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    if (refreshInFlight.current) return refreshInFlight.current;
+    const silent = options?.silent === true;
+    const revision = sessionRevision.current;
+    if (!silent) setLoading(true);
+    const request = (async () => {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), AUTH_REFRESH_TIMEOUT_MS);
+      try {
+        const result = await apiRequest<unknown>('/auth/me', { signal: controller.signal });
+        if (revision !== sessionRevision.current) return;
+        sessionRevision.current += 1;
+        setUser(normalizeUser(result));
         setError('');
-      } else {
-        setError(cause instanceof Error ? cause.message : 'Không thể kiểm tra phiên đăng nhập.');
+      } catch (cause) {
+        if (revision !== sessionRevision.current) return;
+        if (isUnauthorizedSessionError(cause)) {
+          sessionRevision.current += 1;
+          setUser(null);
+          setError('');
+        } else {
+          setError(cause instanceof DOMException && cause.name === 'AbortError'
+            ? 'Kiểm tra phiên đăng nhập quá thời gian chờ. Hãy thử lại.'
+            : cause instanceof Error ? cause.message : 'Không thể kiểm tra phiên đăng nhập.');
+        }
+      } finally {
+        window.clearTimeout(timeout);
+        if (!silent) setLoading(false);
       }
+    })();
+    refreshInFlight.current = request;
+    try {
+      await request;
     } finally {
-      setLoading(false);
+      if (refreshInFlight.current === request) refreshInFlight.current = null;
     }
   }, []);
 
   useEffect(() => {
     void refresh();
-    const sync = () => { if (document.visibilityState === 'visible') void refresh(); };
+    const sync = () => { if (document.visibilityState === 'visible') void refresh({ silent: true }); };
     const unauthorized = () => { void refresh(); };
     window.addEventListener('focus', sync);
     window.addEventListener('skillgraph:unauthorized', unauthorized);
@@ -108,36 +131,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
+    useUserStore.getState().clear();
     if (user?.role === 'user') void useUserStore.getState().hydrate();
-    else useUserStore.getState().clear();
   }, [user?.id, user?.role]);
 
   const login = useCallback(async (email: string, password: string) => {
+    const revision = ++sessionRevision.current;
     const result = await authRequest<{ user: unknown }>('/auth/login', { email, password });
     const loggedIn = normalizeUser(result.user);
-    setUser(loggedIn);
-    setError('');
+    if (revision === sessionRevision.current) {
+      sessionRevision.current += 1;
+      setUser(loggedIn);
+      setError('');
+    }
     return loggedIn;
   }, []);
 
   const updateDisplayName = useCallback(async (displayName: string) => {
+    const revision = sessionRevision.current;
     const result = await apiRequest<unknown>('/auth/me', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ displayName }),
     });
     const updated = normalizeUser(result);
-    setUser(updated);
-    setError('');
+    if (revision === sessionRevision.current) {
+      setUser(updated);
+      setError('');
+    }
     return updated;
   }, []);
   const logout = useCallback(async () => {
+    const revision = ++sessionRevision.current;
     await authRequest('/auth/logout', {});
-    setUser(null);
-    setError('');
-    useUserStore.getState().clear();
+    if (revision === sessionRevision.current) {
+      setUser(null);
+      setError('');
+      useUserStore.getState().clear();
+    }
   }, []);
   const completePasswordChange = useCallback(() => {
+    sessionRevision.current += 1;
     setUser(null);
     setError('');
     setPasswordChangedNotice(true);

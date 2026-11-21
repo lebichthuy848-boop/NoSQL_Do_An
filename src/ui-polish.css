@@ -71,7 +71,7 @@ textarea {
   gap: clamp(8px, 0.8vw, 15px);
   min-width: 0;
 }
-.desktop-nav a {
+.desktop-nav > a {
   flex: 0 0 auto;
   position: relative;
   font-size: clamp(0.76rem, 0.74vw, 0.88rem);
@@ -79,7 +79,7 @@ textarea {
   white-space: nowrap;
   padding: 29px 0 27px;
 }
-.desktop-nav a:after {
+.desktop-nav > a:after {
   content: "";
   position: absolute;
   left: 50%;
@@ -90,10 +90,61 @@ textarea {
   background: linear-gradient(90deg, var(--primary), var(--cyan));
   transition: 0.25s;
 }
-.desktop-nav a:hover:after,
-.desktop-nav a.active:after {
+.desktop-nav > a:hover:after,
+.desktop-nav > a.active:after {
   left: 0;
   right: 0;
+}
+.personal-nav-menu {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.personal-nav-menu > summary {
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+  font-size: clamp(0.76rem, 0.74vw, 0.88rem);
+  font-weight: 700;
+  color: var(--text);
+}
+.personal-nav-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.personal-nav-menu > summary::after {
+  content: "⌄";
+  margin-left: 5px;
+  color: var(--muted);
+}
+.personal-nav-popover {
+  position: absolute;
+  z-index: 130;
+  top: calc(100% - 8px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 220px;
+  max-height: min(70vh, 480px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 18px 40px #1018282b;
+}
+.personal-nav-popover a {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+.personal-nav-popover a:hover,
+.personal-nav-popover a.active {
+  background: var(--panel-soft);
+  color: var(--primary);
 }
 .version {
   flex: 0 0 auto;
@@ -145,6 +196,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow-y: auto;
 }
 .drawer-head {
   display: flex;
@@ -170,6 +222,15 @@ textarea {
 .mobile-drawer > a:hover {
   background: var(--panel-soft);
   color: var(--primary);
+}
+.mobile-drawer-section {
+  padding: 14px 12px 5px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .mobile-drawer .btn {
   margin-top: auto;
@@ -645,7 +706,7 @@ footer {
   .desktop-nav {
     gap: 10px;
   }
-  .desktop-nav a {
+  .desktop-nav > a {
     font-size: 0.76rem;
   }
   .version {
@@ -661,7 +722,7 @@ footer {
   .desktop-nav {
     gap: 8px;
   }
-  .desktop-nav a {
+  .desktop-nav > a {
     font-size: 0.72rem;
   }
   .header-cta {

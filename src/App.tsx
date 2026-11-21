@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import StatisticsDashboard, { normalizeCoverageRows } from "./features/statistics/StatisticsDashboard";
 import { useApiData, useApiPages } from "./api/hooks";
-import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigationType, useParams } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import {
@@ -28,6 +28,7 @@ import { getCatalogRepository } from "./repositories/catalogRepository";
 import { useUserStore } from "./stores/userStore";
 import type { Career, Course, Skill } from "./types/catalog";
 import { validExternalHttpUrl } from "./utils/externalUrl";
+import { routeScrollTop } from "./utils/scrollRestoration";
 import { useAuth } from "./features/auth/AuthProvider";
 import GraphExplorer from "./features/graph/GraphExplorer";
 import MyLearningPage from "./features/learning/MyLearningPage";
@@ -51,9 +52,55 @@ const repo = getCatalogRepository(),
   PAGE = 18;
 const pretty = (s: string) =>
   s.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+const publicNav = [
+  ["/careers", "Nghề nghiệp"],
+  ["/skills", "Kỹ năng"],
+  ["/skill-taxonomy", "ESCO Taxonomy"],
+  ["/resources", "Học liệu"],
+  ["/providers", "Nhà cung cấp"],
+  ["/graph", "Skill Graph"],
+  ["/data-quality", "Chất lượng dữ liệu"],
+];
+const personalNav = [
+  ["/dashboard", "Tổng quan"],
+  ["/career-goal", "Nghề mục tiêu"],
+  ["/my-skills", "Kỹ năng của tôi"],
+  ["/skill-gap", "Skill Gap"],
+  ["/career-fit", "Career Fit"],
+  ["/recommendations", "Recommendation"],
+  ["/learning-path", "Learning Path"],
+  ["/my-learning", "Học liệu của tôi"],
+];
+
+function RouteScrollRestoration() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const positions = useRef(new Map<string, number>());
+  const previousKey = useRef(location.key);
+
+  useLayoutEffect(() => {
+    if (previousKey.current === location.key) return;
+    positions.current.set(previousKey.current, window.scrollY);
+    const scrollTop = routeScrollTop(navigationType, positions.current.get(location.key));
+    window.scrollTo(0, scrollTop);
+    previousKey.current = location.key;
+  }, [location.key, navigationType]);
+
+  useEffect(() => {
+    const savePosition = () => positions.current.set(location.key, window.scrollY);
+    window.addEventListener("scroll", savePosition, { passive: true });
+    return () => window.removeEventListener("scroll", savePosition);
+  }, [location.key]);
+
+  return null;
+}
+
 function App() {
   const isAdminRoute = useLocation().pathname.startsWith("/admin");
+  const { user } = useAuth();
   const [, setCatalogVersion] = useState(0);
+  const personalMenuRef = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
     const unsubscribe = repo.subscribe(() => setCatalogVersion((version) => version + 1));
     void repo.load();
@@ -67,18 +114,9 @@ function App() {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
-  const nav = [
-    ["/dashboard", "Tổng quan"],
-    ["/careers", "Nghề nghiệp"],
-    ["/skills", "Kỹ năng"],
-    ["/skill-taxonomy", "ESCO Taxonomy"],
-    ["/resources", "Học liệu"],
-    ["/providers", "Nhà cung cấp"],
-    ["/graph", "Skill Graph"],
-    ["/data-quality", "Chất lượng dữ liệu"],
-  ];
   return (
     <div className={`app${isAdminRoute ? " admin-host" : ""}`}>
+      <RouteScrollRestoration />
       <header className="site-header">
         <Link className="brand" to="/" aria-label="SkillGraph - Trang chủ">
           <span className="brand-mark">
@@ -89,11 +127,18 @@ function App() {
           </span>
         </Link>
         <nav className="desktop-nav" aria-label="Điều hướng chính">
-          {nav.map(([to, n]) => (
+          {publicNav.map(([to, n]) => (
             <NavLink key={to} to={to} onClick={() => setMenu(false)}>
               {n}
             </NavLink>
           ))}
+          {user?.role === "user" && <details ref={personalMenuRef} className="personal-nav-menu">
+            <summary>Không gian cá nhân</summary>
+            <div className="personal-nav-popover">
+              {personalNav.map(([to, label]) => <NavLink key={to} to={to} onClick={() => { if (personalMenuRef.current) personalMenuRef.current.open = false; }}>{label}</NavLink>)}
+            </div>
+          </details>}
+          {user?.role === "admin" && <NavLink to="/admin/dashboard">Quản trị</NavLink>}
         </nav>
         <AuthHeader />
         <Link className="header-cta" to="/careers">
@@ -139,17 +184,22 @@ function App() {
                   <X />
                 </button>
               </div>
-              {nav.map(([to, n]) => (
+              {publicNav.map(([to, n]) => (
                 <NavLink key={to} to={to} onClick={() => setMenu(false)}>
                   {n} <ArrowRight />
                 </NavLink>
               ))}
+              {user?.role === "user" && <>
+                <div className="mobile-drawer-section">Không gian cá nhân</div>
+                {personalNav.map(([to, label]) => <NavLink key={to} to={to} onClick={() => setMenu(false)}>{label} <ArrowRight /></NavLink>)}
+              </>}
+              {user?.role === "admin" && <NavLink to="/admin/dashboard" onClick={() => setMenu(false)}>Bảng quản trị <ArrowRight /></NavLink>}
               <Link
                 className="btn primary"
-                to="/career-goal"
+                to={user?.role === "admin" ? "/admin/dashboard" : user ? "/dashboard" : "/careers"}
                 onClick={() => setMenu(false)}
               >
-                Bắt đầu lộ trình mô phỏng
+                {user?.role === "admin" ? "Mở bảng quản trị" : user ? "Mở không gian cá nhân" : "Khám phá nghề nghiệp"}
               </Link>
             </motion.aside>
           </>
@@ -377,16 +427,40 @@ function Careers() {
 }
 function CareerCard({ x }: { x: Career }) {
   const requirements = repo.getCareerRequirements(x.id);
-  const setCareer = useUserStore((state) => state.setCareer);
   const { user } = useAuth();
-  return <article className="catalog-card"><div className="card-top"><span className="card-icon"><BriefcaseBusiness /></span><span className="pill">ISCO {x.iscoGroup}</span></div><h3>{x.name}</h3><p className="muted">{x.careerGroup}</p><p className="clamp">{x.description}</p><div className="counts"><span><b>{requirements.filter((row) => row.requirementType === 'essential').length}</b> Essential</span><span><b>{requirements.filter((row) => row.requirementType === 'optional').length}</b> Optional</span></div><div className="card-actions"><Link className="card-link" to={`/careers/${x.key}`}>Chi tiết <ArrowRight /></Link>{user?.role === 'user' ? <button onClick={() => void setCareer(x.id)}>Chọn mục tiêu</button> : <Link className="card-link" to="/login">Đăng nhập để chọn mục tiêu</Link>}</div></article>;
+  return <article className="catalog-card"><div className="card-top"><span className="card-icon"><BriefcaseBusiness /></span><span className="pill">ISCO {x.iscoGroup}</span></div><h3>{x.name}</h3><p className="muted">{x.careerGroup}</p><p className="clamp">{x.description}</p><div className="counts"><span><b>{requirements.filter((row) => row.requirementType === 'essential').length}</b> Essential</span><span><b>{requirements.filter((row) => row.requirementType === 'optional').length}</b> Optional</span></div><div className="card-actions"><Link className="card-link" to={`/careers/${x.key}`}>Chi tiết <ArrowRight /></Link>{user?.role === 'user' ? <CareerGoalAction careerId={x.id} buttonClass="" label="Chọn mục tiêu" /> : <Link className="card-link" to="/login">Đăng nhập để chọn mục tiêu</Link>}</div></article>;
 }
+
+function CareerGoalAction({ careerId, buttonClass, label }: { careerId: string; buttonClass: string; label: string }) {
+  const setCareer = useUserStore((state) => state.setCareer);
+  const current = useUserStore((state) => state.selectedCareerId);
+  const saving = useUserStore((state) => state.saving);
+  const [feedback, setFeedback] = useState('');
+  const [actionError, setActionError] = useState('');
+  const selected = current === careerId;
+
+  const chooseCareer = async () => {
+    setFeedback('');
+    setActionError('');
+    const saved = await setCareer(careerId);
+    if (saved) setFeedback('Nghề mục tiêu đã được lưu.');
+    else setActionError(useUserStore.getState().error || 'Không thể lưu nghề mục tiêu.');
+  };
+
+  return <>
+    <button className={buttonClass} disabled={saving || selected} aria-pressed={selected} onClick={() => void chooseCareer()}>
+      {saving ? 'Đang lưu nghề…' : selected ? 'Đã chọn làm mục tiêu' : label}
+    </button>
+    {actionError && <span className="career-goal-error" role="alert">{actionError}</span>}
+    {(feedback || selected) && <span className="career-goal-feedback" role="status">{feedback || 'Đang là nghề mục tiêu.'} <Link to="/my-skills">Tiếp tục khai báo kỹ năng</Link></span>}
+  </>;
+}
+
 function CareerDetail() {
   const { id = "" } = useParams(),
     x = repo.getCareerById(id),
     [tab, setTab] = useState("essential"),
     [q, setQ] = useState("");
-  const setCareer = useUserStore((s) => s.setCareer);
   const { user } = useAuth();
   if (repo.status === "loading" || repo.status === "idle") return <div className="container" role="status">Đang tải nghề nghiệp từ Backend…</div>;
   if (repo.status === "error") return <div className="container warning" role="alert">{repo.error}</div>;
@@ -411,7 +485,7 @@ function CareerDetail() {
           <a href={x.escoUri} target="_blank" rel="noreferrer">
             ESCO <ExternalLink />
           </a>
-          {user?.role === "user" ? <button className="btn primary" onClick={() => void setCareer(x.id)}>Chọn làm mục tiêu</button> : <Link className="btn primary" to="/login">Đăng nhập để chọn mục tiêu</Link>}
+          {user?.role === "user" ? <CareerGoalAction careerId={x.id} buttonClass="btn primary" label="Chọn làm mục tiêu" /> : <Link className="btn primary" to="/login">Đăng nhập để chọn mục tiêu</Link>}
         </div>
         <div className="metric-card">
           <strong>{all.length}</strong>
@@ -578,7 +652,7 @@ function Providers() {
 function GraphPage() { return <GraphExplorer />; }
 function CareerGoal() {
   const setCareer = useUserStore((state) => state.setCareer), current = useUserStore((state) => state.selectedCareerId), saving = useUserStore((state) => state.saving), error = useUserStore((state) => state.error);
-  return <div className="container"><Head tag="NGHỀ MỤC TIÊU" title="Chọn nghề mục tiêu" text="Lựa chọn được lưu vào hồ sơ của bạn trên Backend." />{error && <div className="warning" role="alert">{error}</div>}<div className="catalog-grid">{repo.getCareers().map((career) => <button className={`goal-card ${current === career.id ? 'active' : ''}`} key={career.id} disabled={saving} onClick={() => void setCareer(career.id)}><BriefcaseBusiness /><b>{career.name}</b><span>{career.careerGroup}</span></button>)}</div>{current && <Link className="btn primary" to="/my-skills">Tiếp tục khai báo kỹ năng <ArrowRight /></Link>}</div>;
+  return <div className="container"><Head tag="NGHỀ MỤC TIÊU" title="Chọn nghề mục tiêu" text="Lựa chọn được lưu vào hồ sơ của bạn trên Backend." />{error && <div className="warning" role="alert">{error}</div>}<div className="catalog-grid">{repo.getCareers().map((career) => <button className={`goal-card ${current === career.id ? 'active' : ''}`} key={career.id} disabled={saving || current === career.id} aria-pressed={current === career.id} onClick={() => void setCareer(career.id)}><BriefcaseBusiness /><b>{career.name}</b><span>{current === career.id ? 'Nghề mục tiêu hiện tại' : career.careerGroup}</span></button>)}</div>{current && <Link className="btn primary" to="/my-skills">Tiếp tục khai báo kỹ năng <ArrowRight /></Link>}</div>;
 }
 function MySkills() {
   const state = useUserStore(), career = state.selectedCareerId ? repo.getCareerById(state.selectedCareerId) : null;

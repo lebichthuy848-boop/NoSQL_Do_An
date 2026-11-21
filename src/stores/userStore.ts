@@ -14,17 +14,20 @@ type State = Profile & {
   initialized: boolean;
   loading: boolean;
   saving: boolean;
+  savingResourceIds: string[];
   error: string;
+  noteDrafts: Record<string, string>;
   selectedCareerId: string | null;
   declaredSkillIds: string[];
   hydrate: () => Promise<void>;
   clear: () => void;
-  setCareer: (id: string) => Promise<void>;
+  setCareer: (id: string) => Promise<boolean>;
   toggleSkill: (id: string) => Promise<void>;
-  toggleSaved: (id: string) => Promise<void>;
-  setStatus: (id: string, status: 'planned' | 'viewed') => Promise<void>;
-  setNote: (id: string, note: string) => Promise<void>;
-  setCompleted: (id: string, completed: boolean) => Promise<void>;
+  toggleSaved: (id: string) => Promise<boolean>;
+  setStatus: (id: string, status: 'planned' | 'viewed') => Promise<boolean>;
+  setNoteDraft: (id: string, note: string, preserve?: boolean) => void;
+  setNote: (id: string, note: string) => Promise<boolean>;
+  setCompleted: (id: string, completed: boolean) => Promise<boolean>;
 };
 
 const empty = (): Profile => ({
@@ -43,97 +46,163 @@ const stateFromProfile = (profile: Profile) => ({
 });
 const resourcePath = (id: string) => `/me/resources/${encodeURIComponent(id)}/state`;
 
-export const useUserStore = create<State>((set, get) => ({
-  ...empty(),
-  initialized: false,
-  loading: false,
-  saving: false,
-  error: '',
-  selectedCareerId: null,
-  declaredSkillIds: [],
+export const useUserStore = create<State>((set, get) => {
+  let profileEpoch = 0;
+  let activeWrites = 0;
 
-  hydrate: async () => {
-    if (get().loading) return;
-    set({ loading: true, error: '' });
+  const beginWrite = () => {
+    const epoch = profileEpoch;
+    activeWrites += 1;
+    set({ saving: true, error: '' });
+    return epoch;
+  };
+  const finishWrite = (epoch: number) => {
+    if (epoch !== profileEpoch) return;
+    activeWrites = Math.max(0, activeWrites - 1);
+    set({ saving: activeWrites > 0 });
+  };
+  const writeResource = async (id: string, request: () => Promise<unknown>, apply: () => void) => {
+    if (get().savingResourceIds.includes(id)) return false;
+    const epoch = profileEpoch;
+    activeWrites += 1;
+    set((state) => ({
+      saving: true,
+      savingResourceIds: [...state.savingResourceIds, id],
+      error: '',
+    }));
     try {
-      const result = await apiRequest<{ profile: Profile }>('/me');
-      set({ ...stateFromProfile(result.profile), initialized: true });
+      await request();
+      if (epoch !== profileEpoch) return false;
+      apply();
+      return true;
     } catch (cause) {
-      set({ error: cause instanceof Error ? cause.message : 'Không thể tải dữ liệu cá nhân.', initialized: true });
+      if (epoch === profileEpoch) {
+        set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật trạng thái học liệu.' });
+      }
+      return false;
     } finally {
-      set({ loading: false });
+      if (epoch === profileEpoch) {
+        activeWrites = Math.max(0, activeWrites - 1);
+        set((state) => ({
+          saving: activeWrites > 0,
+          savingResourceIds: state.savingResourceIds.filter((value) => value !== id),
+        }));
+      }
     }
-  },
+  };
 
-  clear: () => set({
-    ...empty(), initialized: false, loading: false, saving: false, error: '',
-    selectedCareerId: null, declaredSkillIds: [],
-  }),
+  return {
+    ...empty(),
+    initialized: false,
+    loading: false,
+    saving: false,
+    savingResourceIds: [],
+    error: '',
+    noteDrafts: {},
+    selectedCareerId: null,
+    declaredSkillIds: [],
 
-  setCareer: async (id) => {
-    set({ saving: true, error: '' });
-    try {
-      const result = await apiRequest<{ careerGoalId: string; skillIds: string[] }>('/me/career-goal', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ careerId: id }),
+    hydrate: async () => {
+      if (get().loading) return;
+      const epoch = profileEpoch;
+      set({ loading: true, error: '' });
+      try {
+        const result = await apiRequest<{ profile: Profile }>('/me');
+        if (epoch === profileEpoch) set({ ...stateFromProfile(result.profile), initialized: true });
+      } catch (cause) {
+        if (epoch === profileEpoch) {
+          set({ error: cause instanceof Error ? cause.message : 'Không thể tải dữ liệu cá nhân.' });
+        }
+      } finally {
+        if (epoch === profileEpoch) set({ loading: false });
+      }
+    },
+
+    clear: () => {
+      profileEpoch += 1;
+      activeWrites = 0;
+      set({
+        ...empty(), initialized: false, loading: false, saving: false, savingResourceIds: [], error: '',
+        noteDrafts: {}, selectedCareerId: null, declaredSkillIds: [],
       });
-      set({ careerGoalId: result.careerGoalId, selectedCareerId: result.careerGoalId, skillIds: result.skillIds, declaredSkillIds: result.skillIds });
-    } catch (cause) {
-      set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật nghề mục tiêu.' });
-    } finally { set({ saving: false }); }
-  },
+    },
 
-  toggleSkill: async (id) => {
-    const isOwned = get().declaredSkillIds.includes(id);
-    set({ saving: true, error: '' });
-    try {
-      const result = isOwned
-        ? await apiRequest<{ skillIds: string[] }>(`/me/skills/${encodeURIComponent(id)}`, { method: 'DELETE' })
-        : await apiRequest<{ skillIds: string[] }>('/me/skills', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skillId: id }) });
-      set({ skillIds: result.skillIds, declaredSkillIds: result.skillIds });
-    } catch (cause) { set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật kỹ năng.' }); }
-    finally { set({ saving: false }); }
-  },
+    setCareer: async (id) => {
+      const epoch = beginWrite();
+      try {
+        const result = await apiRequest<{ careerGoalId: string; skillIds: string[] }>('/me/career-goal', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ careerId: id }),
+        });
+        if (epoch !== profileEpoch) return false;
+        set({ careerGoalId: result.careerGoalId, selectedCareerId: result.careerGoalId, skillIds: result.skillIds, declaredSkillIds: result.skillIds });
+        return true;
+      } catch (cause) {
+        if (epoch === profileEpoch) set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật nghề mục tiêu.' });
+        return false;
+      } finally { finishWrite(epoch); }
+    },
 
-  toggleSaved: async (id) => {
-    const saved = !get().savedResourceIds.includes(id);
-    set({ saving: true, error: '' });
-    try {
-      await apiRequest(resourcePath(id), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saved }) });
-      const values = get().savedResourceIds;
-      set({ savedResourceIds: saved ? [...values, id] : values.filter((value) => value !== id) });
-    } catch (cause) { set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật học liệu đã lưu.' }); }
-    finally { set({ saving: false }); }
-  },
+    toggleSkill: async (id) => {
+      const epoch = beginWrite();
+      const isOwned = get().declaredSkillIds.includes(id);
+      try {
+        const result = isOwned
+          ? await apiRequest<{ skillIds: string[] }>(`/me/skills/${encodeURIComponent(id)}`, { method: 'DELETE' })
+          : await apiRequest<{ skillIds: string[] }>('/me/skills', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skillId: id }) });
+        if (epoch === profileEpoch) set({ skillIds: result.skillIds, declaredSkillIds: result.skillIds });
+      } catch (cause) {
+        if (epoch === profileEpoch) set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật kỹ năng.' });
+      } finally { finishWrite(epoch); }
+    },
 
-  setStatus: async (id, status) => {
-    const key = status === 'planned' ? 'plannedResourceIds' : 'viewedResourceIds';
-    const next = !get()[key].includes(id);
-    set({ saving: true, error: '' });
-    try {
-      await apiRequest(resourcePath(id), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [status]: next }) });
-      const values = get()[key];
-      set({ [key]: next ? [...values, id] : values.filter((value) => value !== id) });
-    } catch (cause) { set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật tiến độ học.' }); }
-    finally { set({ saving: false }); }
-  },
+    toggleSaved: async (id) => {
+      if (get().savingResourceIds.includes(id)) return false;
+      const saved = !get().savedResourceIds.includes(id);
+      return writeResource(id, () => apiRequest(resourcePath(id), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saved }),
+      }), () => {
+        const values = get().savedResourceIds;
+        set({ savedResourceIds: saved ? [...new Set([...values, id])] : values.filter((value) => value !== id) });
+      });
+    },
 
-  setNote: async (id, note) => {
-    set({ saving: true, error: '' });
-    try {
-      await apiRequest(resourcePath(id), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) });
-      set({ notes: { ...get().notes, [id]: note } });
-    } catch (cause) { set({ error: cause instanceof Error ? cause.message : 'Không thể lưu ghi chú.' }); }
-    finally { set({ saving: false }); }
-  },
+    setStatus: async (id, status) => {
+      if (get().savingResourceIds.includes(id)) return false;
+      const key = status === 'planned' ? 'plannedResourceIds' : 'viewedResourceIds';
+      const next = !get()[key].includes(id);
+      return writeResource(id, () => apiRequest(resourcePath(id), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [status]: next }),
+      }), () => {
+        const values = get()[key];
+        set({ [key]: next ? [...new Set([...values, id])] : values.filter((value) => value !== id) });
+      });
+    },
 
-  setCompleted: async (id, completed) => {
-    set({ saving: true, error: '' });
-    try {
-      const result = completed
-        ? await apiRequest<{ completedResourceIds: string[]; note?: string }>('/me/completed-resources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resourceId: id }) })
-        : await apiRequest<{ completedResourceIds: string[] }>(`/me/completed-resources/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      set({ completedResourceIds: result.completedResourceIds });
-    } catch (cause) { set({ error: cause instanceof Error ? cause.message : 'Không thể cập nhật học liệu đã hoàn thành.' }); }
-    finally { set({ saving: false }); }
-  },
-}));
+    setNoteDraft: (id, note, preserve = false) => set((state) => {
+      const noteDrafts = { ...state.noteDrafts };
+      if (!preserve && note === state.notes[id]) delete noteDrafts[id];
+      else noteDrafts[id] = note;
+      return { noteDrafts };
+    }),
+
+    setNote: async (id, note) => writeResource(id, () => apiRequest(resourcePath(id), {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }),
+    }), () => {
+      const state = get();
+      const noteDrafts = { ...state.noteDrafts };
+      if (noteDrafts[id] === note) delete noteDrafts[id];
+      set({ notes: { ...state.notes, [id]: note }, noteDrafts });
+    }),
+
+    setCompleted: async (id, completed) => {
+      if (get().savingResourceIds.includes(id)) return false;
+      let completedResourceIds: string[] = [];
+      return writeResource(id, async () => {
+        const result = completed
+          ? await apiRequest<{ completedResourceIds: string[] }>('/me/completed-resources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resourceId: id }) })
+          : await apiRequest<{ completedResourceIds: string[] }>(`/me/completed-resources/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        completedResourceIds = result.completedResourceIds;
+      }, () => set({ completedResourceIds }));
+    },
+  };
+});

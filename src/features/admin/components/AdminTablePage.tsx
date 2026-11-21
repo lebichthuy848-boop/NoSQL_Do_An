@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Check, CirclePlus, Eye, Filter, Pencil, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { apiRequest } from '../../../api/http';
 import type { AdminRecord, FieldSpec } from '../types/admin';
 import type { AdminOutlet } from './AdminLayout';
+import { RequestGeneration } from '../../../utils/requestGeneration';
 
 type Page = 'careers' | 'skills' | 'providers' | 'courses' | 'course-skill-mappings' | 'career-skills' | 'skill-prerequisites';
 type DraftRoute = { base: string; fields: FieldSpec[]; columns: string[]; title: string; eyebrow: string; description: string };
@@ -53,8 +54,10 @@ export default function AdminTablePage({ page }: { page: Page }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
+  const loadGeneration = useRef(new RequestGeneration());
 
   async function loadRows() {
+    const generation = loadGeneration.current.next();
     setLoading(true); setError('');
     try {
       let result: AdminRecord[] = [];
@@ -68,13 +71,18 @@ export default function AdminTablePage({ page }: { page: Page }) {
         }));
         result = groups.flat();
       } else if (draft) result = await readAll(draft.base, statusFilter);
+      if (!loadGeneration.current.isCurrent(generation)) return;
       setRows(result); setPageNo(1);
     } catch (cause) {
+      if (!loadGeneration.current.isCurrent(generation)) return;
       setError(cause instanceof Error ? cause.message : 'Không thể tải dữ liệu từ Backend.');
       setRows([]);
-    } finally { setLoading(false); }
+    } finally { if (loadGeneration.current.isCurrent(generation)) setLoading(false); }
   }
-  useEffect(() => { void loadRows(); }, [page, statusFilter]);
+  useEffect(() => {
+    void loadRows();
+    return () => loadGeneration.current.invalidate();
+  }, [page, statusFilter]);
 
   const query = `${search} ${globalSearch}`.trim().toLowerCase();
   const filtered = useMemo(() => rows.filter((row) => { const matches = !query || Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(query)); const state = String(row.status || (row.recommendationEligible === true ? 'approved' : 'pending')); return matches && (statusFilter === 'all' || state === statusFilter); }), [rows, query, statusFilter]);

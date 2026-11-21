@@ -904,6 +904,63 @@ html[data-theme="dark"] .warning {
   color: inherit;
   resize: vertical;
 }
+.learning-note-editor {
+  margin-top: 10px;
+}
+.learning-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.learning-note-actions small,
+.learning-note-editor > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.learning-note-actions button,
+.learning-note-error button {
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 10px;
+  background: #eef0ff;
+  color: #454ec0;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.learning-note-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.learning-note-error {
+  margin-top: 7px;
+  color: #a32935;
+  font-size: 11px;
+}
+.learning-action-notice {
+  margin: 10px 0;
+  color: #17603d;
+  font-size: 13px;
+}
+.career-goal-feedback,
+.career-goal-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.career-goal-feedback {
+  color: #17603d;
+}
+.career-goal-feedback a {
+  color: #454ec0;
+  font-weight: 700;
+}
+.career-goal-error {
+  color: #a32935;
+}
 .btn.danger {
   margin-top: 24px;
   background: #fff1f2;
