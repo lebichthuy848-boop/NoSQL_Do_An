@@ -23,7 +23,7 @@ const emailA = `skillgraph-test-a+${runId}@example.invalid`;
 const emailB = `skillgraph-test-b+${runId}@example.invalid`;
 const emailFit = `skillgraph-test-fit+${runId}@example.invalid`;
 let userKeys = [];
-let results = { startedAt: new Date().toISOString(), DATABASE_CONNECTIVITY_PASS: false, BACKEND_BUILD_PASS: true, AUTHORIZATION_TEST_PASS: false, BUSINESS_API_TEST_PASS: false, ADMIN_API_TEST_PASS: false, ADMIN_PREREQUISITES_READ_TEST_PASS: false, DATABASE_COLLECTION_CATEGORIES_TEST_PASS: false, ADMIN_DRAFT_GATES_TEST_PASS: false, ADMIN_MAPPING_DUPLICATE_TEST_PASS: false, PASSWORD_CHANGE_TRANSACTION_PASS: false, ADMIN_ROLE_CHANGE_SESSION_REVOCATION_TEST_PASS: false, LAST_ACTIVE_ADMIN_TEST_PASS: false, LAST_ACTIVE_ADMIN_CONCURRENCY_TEST_STATUS: "UNVERIFIED", EMPTY_PROFILE_TEST_PASS: false, FULL_CAREER_FIT_TEST_PASS: false, GRAPH_PRIVACY_TEST_PASS: false, SKILL_RESOURCE_COUNT_TEST_PASS: false, LEARNING_PATH_TEST_PASS: false, LEARNING_PATH_PREREQUISITE_TEST_PASS: false, LEARNING_PATH_NO_RESOURCE_TEST_PASS: false, MULTI_USER_TEST_PASS: false };
+let results = { startedAt: new Date().toISOString(), DATABASE_CONNECTIVITY_PASS: false, BACKEND_BUILD_PASS: true, AUTHORIZATION_TEST_PASS: false, BUSINESS_API_TEST_PASS: false, ADMIN_API_TEST_PASS: false, ADMIN_PREREQUISITES_READ_TEST_PASS: false, DATABASE_COLLECTION_CATEGORIES_TEST_PASS: false, ADMIN_DRAFT_GATES_TEST_PASS: false, ADMIN_DASHBOARD_DRAFT_COUNTS_TEST_PASS: false, ADMIN_MAPPING_DUPLICATE_TEST_PASS: false, PASSWORD_CHANGE_TRANSACTION_PASS: false, ADMIN_ROLE_CHANGE_SESSION_REVOCATION_TEST_PASS: false, LAST_ACTIVE_ADMIN_TEST_PASS: false, LAST_ACTIVE_ADMIN_CONCURRENCY_TEST_STATUS: "UNVERIFIED", EMPTY_PROFILE_TEST_PASS: false, FULL_CAREER_FIT_TEST_PASS: false, GRAPH_PRIVACY_TEST_PASS: false, SKILL_RESOURCE_COUNT_TEST_PASS: false, LEARNING_PATH_TEST_PASS: false, LEARNING_PATH_PREREQUISITE_TEST_PASS: false, LEARNING_PATH_NO_RESOURCE_TEST_PASS: false, MULTI_USER_TEST_PASS: false };
 let stage = "startup";
 
 function headers(cookie = null, jsonBody = false) {
@@ -389,6 +389,8 @@ try {
 
   stage = "admin draft gates";
   const suffix = runId.replaceAll("-", "");
+  const dashboardStatsBeforeDrafts = await api("/admin/statistics", { cookie: adminCookie });
+  assert.equal(dashboardStatsBeforeDrafts.response.status, 200);
   stage = "admin provider draft CRUD";
   const providerPending = await api("/admin/providers", { method: "POST", cookie: adminCookie, body: { name: `TEST Provider Pending ${suffix}`, officialWebsite: `https://example.invalid/providers/pending-${suffix}` } });
   assert.equal(providerPending.response.status, 201, JSON.stringify(providerPending.payload));
@@ -397,6 +399,12 @@ try {
   assert.equal(providerRead.response.status, 200);
   const providerUpdate = await api(`/admin/providers/${providerPending.payload.key}`, { method: "PATCH", cookie: adminCookie, body: { name: `TEST Provider Edited ${suffix}` } });
   assert.equal(providerUpdate.response.status, 200);
+  await db.query("FOR doc IN app_provider_drafts FILTER doc._key == @key AND doc.test_scenario == @scenario UPDATE doc WITH { is_test: false } IN app_provider_drafts", { key: providerPending.payload.key, scenario: "backend_http_integration" });
+  const pendingProviderStats = await api("/admin/statistics", { cookie: adminCookie });
+  assert.equal(pendingProviderStats.response.status, 200);
+  assert.equal(pendingProviderStats.payload.providerCounts.approvedDrafts, dashboardStatsBeforeDrafts.payload.providerCounts.approvedDrafts, "pending non-test provider must not count");
+  const pendingProviderCatalog = await api(`/providers?search=${encodeURIComponent(`TEST Provider Edited ${suffix}`)}`);
+  assert.ok(!pendingProviderCatalog.payload.some((item) => item.id === providerPending.payload.id), "pending non-test provider must stay hidden from public catalog");
   const providerDelete = await api(`/admin/providers/${providerPending.payload.key}`, { method: "DELETE", cookie: adminCookie });
   assert.equal(providerDelete.response.status, 200);
 
@@ -445,21 +453,86 @@ try {
   assert.equal(mappingRead.response.status, 200);
   const mappingUpdate = await api(`/admin/mappings/${mapping.payload.key}`, { method: "PATCH", cookie: adminCookie, body: { skillId: secondSkill.id } });
   assert.equal(mappingUpdate.response.status, 200);
+  const providerFixtureVars = { scenario: "backend_http_integration", providerKey: provider.payload.key };
+  const resourceFixtureVars = { scenario: "backend_http_integration", resourceKey: resource.payload.key };
+  const mappingFixtureVars = { scenario: "backend_http_integration", mappingKey: mapping.payload.key };
+  await Promise.all([
+    db.query("FOR doc IN app_provider_drafts FILTER doc._key == @providerKey AND doc.test_scenario == @scenario UPDATE doc WITH { is_test: false } IN app_provider_drafts", providerFixtureVars),
+    db.query("FOR doc IN app_resource_drafts FILTER doc._key == @resourceKey AND doc.test_scenario == @scenario UPDATE doc WITH { is_test: false } IN app_resource_drafts", resourceFixtureVars),
+    db.query("FOR doc IN app_mapping_drafts FILTER doc._key == @mappingKey AND doc.test_scenario == @scenario UPDATE doc WITH { is_test: false } IN app_mapping_drafts", mappingFixtureVars),
+  ]);
+  stage = "admin dashboard pending draft exclusion";
+  const pendingStats = await api("/admin/statistics", { cookie: adminCookie });
+  assert.equal(pendingStats.response.status, 200);
+  assert.equal(pendingStats.payload.providerCounts.approvedDrafts, dashboardStatsBeforeDrafts.payload.providerCounts.approvedDrafts + 1, "approved non-test provider draft should count");
+  assert.equal(pendingStats.payload.resources.approvedDrafts, dashboardStatsBeforeDrafts.payload.resources.approvedDrafts, "pending non-test resource drafts must not count");
+  assert.equal(pendingStats.payload.mappings.approvedDrafts, dashboardStatsBeforeDrafts.payload.mappings.approvedDrafts, "pending non-test mappings must not count");
+  const pendingPublicResources = await api(`/resources?search=${encodeURIComponent(`TEST Resource Edited ${suffix}`)}`);
+  assert.ok(!pendingPublicResources.payload.some((item) => item.id === resource.payload.id), "pending non-test resource must stay hidden from public catalog");
   const prematureApproval = await api(`/admin/mappings/${mapping.payload.key}/review`, { method: "POST", cookie: adminCookie, body: { decision: "approve", evidenceUrl: `https://example.invalid/mappings/${suffix}`, evidenceScope: "partial", sourceSummary: "TEST only; synthetic fixture." } });
   assert.equal(prematureApproval.response.status, 409, "mapping gate cannot pass before the resource gate");
   assert.equal(prematureApproval.payload.error.code, "COURSE_GATE_REQUIRED");
   const resourceReview = await api(`/admin/resources/${resource.payload.key}/review`, { method: "POST", cookie: adminCookie, body: { decision: "approve", evidenceUrl: `https://example.invalid/resources/evidence-${suffix}`, sourceSummary: "TEST only; synthetic fixture, not real learning evidence." } });
   assert.equal(resourceReview.response.status, 200);
   assert.equal(resourceReview.payload.recommendationEligible, true);
+  const resourceGateStats = await api("/admin/statistics", { cookie: adminCookie });
+  assert.equal(resourceGateStats.response.status, 200);
+  assert.equal(resourceGateStats.payload.resources.approvedDrafts, dashboardStatsBeforeDrafts.payload.resources.approvedDrafts + 1, "approved eligible resource draft should count");
+  assert.equal(resourceGateStats.payload.mappings.approvedDrafts, dashboardStatsBeforeDrafts.payload.mappings.approvedDrafts, "pending mapping must not count even after its resource passes the gate");
+  const pendingSkillResources = await api(`/skills/${encodeURIComponent(secondSkill.id)}/resources`);
+  assert.ok(!pendingSkillResources.payload.some((item) => item.resource.id === resource.payload.id), "pending mapping must stay unavailable after its resource passes the gate");
   const mappingReview = await api(`/admin/mappings/${mapping.payload.key}/review`, { method: "POST", cookie: adminCookie, body: { decision: "approve", evidenceUrl: `https://example.invalid/mappings/evidence-${suffix}`, evidenceScope: "partial", sourceSummary: "TEST only; synthetic fixture, not real learning evidence." } });
   assert.equal(mappingReview.response.status, 200);
   assert.equal(mappingReview.payload.autoRecommendationAllowed, true);
   const gates = await db.query("LET resource = DOCUMENT(CONCAT('app_resource_drafts/', @resourceKey)) LET mapping = DOCUMENT(CONCAT('app_mapping_drafts/', @mappingKey)) RETURN { isTest: resource.is_test == true AND mapping.is_test == true, courseGate: resource.recommendation_eligible == true, teachesGate: mapping.auto_recommendation_allowed == true }", { resourceKey: resource.payload.key, mappingKey: mapping.payload.key });
-  assert.deepEqual(gates[0], { isTest: true, courseGate: true, teachesGate: true });
+  assert.deepEqual(gates[0], { isTest: false, courseGate: true, teachesGate: true });
   const publicResources = await api(`/resources?search=${encodeURIComponent(`TEST Resource Edited ${suffix}`)}`);
-  assert.ok(!publicResources.payload.some((item) => item.id === resource.payload.id), "TEST resource must stay hidden from public catalog");
+  assert.ok(publicResources.payload.some((item) => item.id === resource.payload.id), "approved eligible non-test resource must be visible in public catalog");
   const publicProviders = await api(`/providers?search=${encodeURIComponent(provider.payload.name)}`);
-  assert.ok(!publicProviders.payload.some((item) => item.id === provider.payload.id), "TEST provider must stay hidden from public catalog");
+  assert.ok(publicProviders.payload.some((item) => item.id === provider.payload.id), "approved non-test provider must be visible in public catalog");
+
+  stage = "admin dashboard draft inclusion";
+  // The fixtures were marked non-test before review to isolate status and both recommendation gates.
+  let publicDashboardStats;
+  try {
+    publicDashboardStats = await api("/admin/statistics", { cookie: adminCookie });
+    assert.equal(publicDashboardStats.response.status, 200);
+    assert.equal(publicDashboardStats.payload.providers, dashboardStatsBeforeDrafts.payload.providers, "official provider count must remain unchanged");
+    assert.equal(publicDashboardStats.payload.resources.total, dashboardStatsBeforeDrafts.payload.resources.total, "official resource count must remain unchanged");
+    assert.equal(publicDashboardStats.payload.mappings.total, dashboardStatsBeforeDrafts.payload.mappings.total, "official mapping count must remain unchanged");
+    assert.equal(publicDashboardStats.payload.providerCounts.approvedDrafts, dashboardStatsBeforeDrafts.payload.providerCounts.approvedDrafts + 1);
+    assert.equal(publicDashboardStats.payload.providerCounts.publicTotal, dashboardStatsBeforeDrafts.payload.providerCounts.publicTotal + 1);
+    assert.equal(publicDashboardStats.payload.resources.approvedDrafts, dashboardStatsBeforeDrafts.payload.resources.approvedDrafts + 1);
+    assert.equal(publicDashboardStats.payload.resources.publicTotal, dashboardStatsBeforeDrafts.payload.resources.publicTotal + 1);
+    assert.equal(publicDashboardStats.payload.resources.recommendationEligibleTotal, dashboardStatsBeforeDrafts.payload.resources.recommendationEligibleTotal + 1);
+    assert.equal(publicDashboardStats.payload.mappings.approvedDrafts, dashboardStatsBeforeDrafts.payload.mappings.approvedDrafts + 1);
+    assert.equal(publicDashboardStats.payload.mappings.availableTotal, dashboardStatsBeforeDrafts.payload.mappings.availableTotal + 1);
+    assert.equal(publicDashboardStats.payload.mappings.autoRecommendationAllowedTotal, dashboardStatsBeforeDrafts.payload.mappings.autoRecommendationAllowedTotal + 1);
+    const listedProvider = await api(`/providers?search=${encodeURIComponent(provider.payload.name)}`);
+    assert.ok(listedProvider.payload.some((item) => item.id === provider.payload.id), "approved non-test provider must be visible in the public catalog");
+    const listedResource = await api(`/resources?search=${encodeURIComponent(`TEST Resource Edited ${suffix}`)}`);
+    assert.ok(listedResource.payload.some((item) => item.id === resource.payload.id), "approved eligible non-test resource must be visible in the public catalog");
+    const listedSkillResources = await api(`/skills/${encodeURIComponent(secondSkill.id)}/resources`);
+    assert.equal(listedSkillResources.response.status, 200);
+    assert.ok(listedSkillResources.payload.some((item) => item.resource.id === resource.payload.id), "approved mapping with both gates must be available through the skill resource catalog");
+  } finally {
+    // Restore exclusion while the fixture remains available for the test-scenario cleanup.
+    await Promise.all([
+      db.query("FOR doc IN app_provider_drafts FILTER doc._key == @providerKey AND doc.test_scenario == @scenario UPDATE doc WITH { is_test: true } IN app_provider_drafts", providerFixtureVars),
+      db.query("FOR doc IN app_resource_drafts FILTER doc._key == @resourceKey AND doc.test_scenario == @scenario UPDATE doc WITH { is_test: true } IN app_resource_drafts", resourceFixtureVars),
+      db.query("FOR doc IN app_mapping_drafts FILTER doc._key == @mappingKey AND doc.test_scenario == @scenario UPDATE doc WITH { is_test: true } IN app_mapping_drafts", mappingFixtureVars),
+    ]);
+  }
+  const restoredTestStats = await api("/admin/statistics", { cookie: adminCookie });
+  assert.equal(restoredTestStats.response.status, 200);
+  assert.equal(restoredTestStats.payload.providerCounts.approvedDrafts, dashboardStatsBeforeDrafts.payload.providerCounts.approvedDrafts, "restored test providers must be excluded");
+  assert.equal(restoredTestStats.payload.resources.approvedDrafts, dashboardStatsBeforeDrafts.payload.resources.approvedDrafts, "restored test resources must be excluded");
+  assert.equal(restoredTestStats.payload.mappings.approvedDrafts, dashboardStatsBeforeDrafts.payload.mappings.approvedDrafts, "restored test mappings must be excluded");
+  const restoredPublicResources = await api(`/resources?search=${encodeURIComponent(`TEST Resource Edited ${suffix}`)}`);
+  assert.ok(!restoredPublicResources.payload.some((item) => item.id === resource.payload.id), "approved TEST resource must stay hidden from public catalog");
+  const restoredPublicProviders = await api(`/providers?search=${encodeURIComponent(provider.payload.name)}`);
+  assert.ok(!restoredPublicProviders.payload.some((item) => item.id === provider.payload.id), "approved TEST provider must stay hidden from public catalog");
+  results.ADMIN_DASHBOARD_DRAFT_COUNTS_TEST_PASS = true;
   results.ADMIN_DRAFT_GATES_TEST_PASS = true;
   results.ADMIN_API_TEST_PASS = true;
 
@@ -488,7 +561,7 @@ try {
   stage = "complete";
   process.stdout.write(`${JSON.stringify({ ...results, lastAdminTest: results.LAST_ACTIVE_ADMIN_TEST_PASS ? "PASS" : "SKIPPED_EXISTING_ACTIVE_ADMIN" })}\n`);
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ event: "integration.failed", stage, name: error?.name || "Error", message: "Integration test failed; inspect assertions without sharing credentials." })}\n`);
+  process.stderr.write(`${JSON.stringify({ event: "integration.failed", stage, name: error?.name || "Error", status: error?.status ?? null, errorNum: error?.errorNum ?? null, message: "Integration test failed; inspect assertions without sharing credentials." })}\n`);
   process.exitCode = 1;
 } finally {
   try { await cleanup(); } catch { process.stderr.write("Integration fixture cleanup failed. Keep this database clone isolated and inspect TEST-marked app_users records.\n"); process.exitCode = 1; }

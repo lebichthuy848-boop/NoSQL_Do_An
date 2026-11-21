@@ -123,7 +123,7 @@ export class AdminService {
   }
 
   async statistics() {
-    const [users, careers, skills, courses, providers, eligible, mappings, allowedMappings, pendingResources, pendingMappings, coverage] = await Promise.all([
+    const [users, careers, skills, courses, providers, eligible, mappings, allowedMappings, approvedProviders, approvedResources, availableMappings, pendingResources, pendingMappings, coverage] = await Promise.all([
       this.db.query("FOR user IN app_users COLLECT status = user.status WITH COUNT INTO count RETURN { status, count }"),
       this.db.query("FOR doc IN careers COLLECT WITH COUNT INTO count RETURN count"),
       this.db.query("FOR doc IN skills COLLECT WITH COUNT INTO count RETURN count"),
@@ -132,17 +132,45 @@ export class AdminService {
       this.db.query("RETURN LENGTH(FOR doc IN courses FILTER doc.recommendation_eligible == true RETURN 1)"),
       this.db.query("FOR doc IN teaches COLLECT WITH COUNT INTO count RETURN count"),
       this.db.query("RETURN LENGTH(FOR edge IN teaches FILTER edge.auto_recommendation_allowed == true RETURN 1)"),
+      this.db.query("RETURN LENGTH(FOR doc IN app_provider_drafts FILTER doc.is_test != true AND doc.status == 'approved' RETURN 1)"),
+      this.db.query("RETURN LENGTH(FOR doc IN app_resource_drafts FILTER doc.is_test != true AND doc.status == 'approved' AND doc.recommendation_eligible == true RETURN 1)"),
+      this.db.query("RETURN LENGTH(FOR edge IN app_mapping_drafts FILTER edge.is_test != true AND edge.status == 'approved' AND edge.auto_recommendation_allowed == true LET resource = DOCUMENT(CONCAT('app_resource_drafts/', edge.resource_key)) FILTER resource != null AND resource.is_test != true AND resource.status == 'approved' AND resource.recommendation_eligible == true RETURN 1)"),
       this.db.query("RETURN LENGTH(FOR doc IN app_resource_drafts FILTER doc.status == 'pending' RETURN 1)"),
       this.db.query("RETURN LENGTH(FOR doc IN app_mapping_drafts FILTER doc.status == 'pending' RETURN 1)"),
       this.coverage(),
     ]);
+    const officialProviders = providers[0] || 0;
+    const approvedProviderDrafts = approvedProviders[0] || 0;
+    const officialResources = courses[0] || 0;
+    const approvedResourceDrafts = approvedResources[0] || 0;
+    const officialMappings = mappings[0] || 0;
+    const approvedMappingDrafts = availableMappings[0] || 0;
     return {
       users: { total: users.reduce((sum, row) => sum + row.count, 0), byStatus: users },
       careers: careers[0] || 0,
       skills: skills[0] || 0,
-      resources: { total: courses[0] || 0, recommendationEligible: eligible[0] || 0 },
-      providers: providers[0] || 0,
-      mappings: { total: mappings[0] || 0, autoRecommendationAllowed: allowedMappings[0] || 0 },
+      resources: {
+        total: officialResources,
+        official: officialResources,
+        approvedDrafts: approvedResourceDrafts,
+        publicTotal: officialResources + approvedResourceDrafts,
+        recommendationEligible: eligible[0] || 0,
+        recommendationEligibleTotal: (eligible[0] || 0) + approvedResourceDrafts,
+      },
+      providers: officialProviders,
+      providerCounts: {
+        official: officialProviders,
+        approvedDrafts: approvedProviderDrafts,
+        publicTotal: officialProviders + approvedProviderDrafts,
+      },
+      mappings: {
+        total: officialMappings,
+        official: officialMappings,
+        approvedDrafts: approvedMappingDrafts,
+        availableTotal: officialMappings + approvedMappingDrafts,
+        autoRecommendationAllowed: allowedMappings[0] || 0,
+        autoRecommendationAllowedTotal: (allowedMappings[0] || 0) + approvedMappingDrafts,
+      },
       pendingReview: { resources: pendingResources[0] || 0, mappings: pendingMappings[0] || 0 },
       coverage,
     };
