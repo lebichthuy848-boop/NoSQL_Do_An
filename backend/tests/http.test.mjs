@@ -8,7 +8,7 @@ import { CatalogService } from "../src/catalog.mjs";
 
 const origin = "http://localhost:5173";
 
-async function withApi(run, { catalog = null } = {}) {
+async function withApi(run, { catalog = null, admin = {} } = {}) {
   const db = { version: async () => ({ version: "3.12.11" }), query: async () => [] };
   const auth = {
     authenticate: async (token) => {
@@ -32,7 +32,7 @@ async function withApi(run, { catalog = null } = {}) {
       setCareerGoal: async (_user, careerId) => ({ careerGoalId: careerId, skillIds: ["skills/keep-me"] }),
     },
     catalog: catalog || { careers: async () => ({ items: [{ id: "career1" }], total: 1, page: 1, pageSize: 25 }) },
-    admin: {},
+    admin,
   };
   const config = { cookieName: "sg_session", cookieSecure: false, sessionTtlSeconds: 28800, allowedOrigins: [origin], nodeEnv: "test" };
   const server = createServer(createApplication({ db, config, services }));
@@ -108,6 +108,25 @@ test("admin cannot use user learning endpoints and user cannot use admin endpoin
     const userAsAdmin = await fetch(`${base}/admin/users`, { headers: { Cookie: "sg_session=user-token" } });
     assert.equal(userAsAdmin.status, 403);
   });
+});
+
+test("approved prerequisite listing is Admin-only and exposes no write route", async () => {
+  const prerequisites = [{ dependentSkillId: "skills/js", foundationSkillId: "skills/html", status: "approved" }];
+  await withApi(async (base) => {
+    const adminResponse = await fetch(`${base}/admin/skill-prerequisites`, { headers: { Cookie: "sg_session=admin-token" } });
+    assert.equal(adminResponse.status, 200);
+    assert.deepEqual(await adminResponse.json(), prerequisites);
+
+    const userResponse = await fetch(`${base}/admin/skill-prerequisites`, { headers: { Cookie: "sg_session=user-token" } });
+    assert.equal(userResponse.status, 403);
+
+    const writeResponse = await fetch(`${base}/admin/skill-prerequisites`, {
+      method: "POST",
+      headers: { Cookie: "sg_session=admin-token", Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify({ dependentSkillId: "skills/js", foundationSkillId: "skills/html" }),
+    });
+    assert.equal(writeResponse.status, 404);
+  }, { admin: { skillPrerequisites: async () => prerequisites } });
 });
 
 test("cookie-authenticated mutations require a trusted Origin", async () => {

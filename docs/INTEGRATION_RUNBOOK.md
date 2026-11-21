@@ -212,8 +212,8 @@ Chỉ chạy các bước sau sau khi restore vào DB test mới. Không chạy 
 - Archive SHA-256 khớp chính xác giá trị ở mục 3.
 - API release trả ArangoDB 3.12.11, `careers = 12`, `skills = 420`, `courses = 510`.
 - Baseline Batch 2 trước bootstrap có 25 collection lõi, 5.990 document/edge, 3.099 edge và 13 edge definition. Sau bootstrap sẽ có thêm tám `app_*` collections; chúng không thay thế hoặc sửa collection lõi.
-- Mở `backend/scripts/demo-queries.aql` trong ArangoDB Web Interface. Các query 1 và 7 liệt kê 12 nghề và 420 kỹ năng. Query 13 là AQL chỉ đọc được bổ sung cho checklist này; chưa được chạy trong lượt bàn giao và cần chạy trên DB test mới.
-- Query 13 phải trả `totalCourseCount = 510`, `eligibleCourseCount = 173`, `allowedMappingCount = 245`, `invalidAllowedMappingCount = 0`, `eligibleCoursesWithoutAllowedMapping = 0`.
+- Mở `backend/scripts/demo-queries.aql` trong ArangoDB Web Interface. Stage C receipt ghi 12 truy vấn GUI lịch sử. Query 13 là AQL chỉ đọc; không được xác nhận chạy trong GUI của đợt final release. API/audit kiểm tra gate không thay cho ảnh GUI.
+- Query 13 dự kiến trả `totalCourseCount = 510`, `eligibleCourseCount = 173`, `allowedMappingCount = 245`, `invalidAllowedMappingCount = 0`, `eligibleCoursesWithoutAllowedMapping = 0`. Cần chạy và chụp ảnh riêng nếu dùng làm minh chứng GUI.
 - Recommendation chỉ hợp lệ nếu đồng thời `courses.recommendation_eligible == true` và `teaches.auto_recommendation_allowed == true`. Không bật gate hoặc sửa dữ liệu lõi để ép kết quả.
 - Nếu số liệu khác, dừng demo và so lại hash/DB/port. Không chạy migration hay restore lần nữa trên volume có dữ liệu cần giữ.
 
@@ -232,6 +232,24 @@ git diff --check
 Không chạy `npm run integration --prefix backend` hoặc Browser E2E trên DB vận hành. Các suite đó tạo User/session/audit/draft test data. Chỉ dùng DB test riêng được nêu trong runbook.
 
 Biên bản Stage C còn ghi các giới hạn: Admin Browser E2E đầy đủ chưa được rerun sau sửa cuối; forgot-password chưa có email adapter; Catalog lõi chỉ đọc; một số thao tác hồ sơ/Admin chưa có E2E evidence đầy đủ; bundle Frontend có cảnh báo chunk lớn hơn 500 kB. Hướng dẫn này chưa được chạy từ đầu trên máy sạch, vì vậy chưa thể tuyên bố một máy mới đã dựng thành công.
+
+## Final release integrity và Import/Export
+
+Từ workspace root, chỉ chạy trên container E2E `skillgraph-v366-e2e-20261121-db-loopback` và DB `skill_graph_v366_acceptance`. Các script từ chối endpoint/database/runtime principal khác. File runtime bị Git ignore và ACL khóa; không in hoặc chia sẻ nội dung.
+
+Read-only integrity audit (không ghi Database):
+
+```powershell
+node --env-file=backend/.env.e2e-20261121-runtime backend/scripts/audit-e2e-integrity.mjs
+```
+
+Import/export kiểm chứng một record test trong `app_audit_log`, đối chiếu lại rồi tự cleanup; không nhắm core collections:
+
+```powershell
+node --env-file=backend/.env.e2e-20261121-runtime backend/scripts/import-export-e2e-test.mjs
+```
+
+Bản audit đã chạy và lọc credential/record content được lưu tại `docs/evidence/integrity-audit-e2e-2026-11-21.json`. Nó cho thấy source/live canonical content khớp, đồng thời ghi rõ ba stored fingerprints không tái lập được bằng canonical method hiện tại. Archive lịch sử không còn ở workspace để re-hash; không chạy restore trên volume demo.
 
 ## 9. Lỗi thường gặp
 

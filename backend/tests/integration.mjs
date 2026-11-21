@@ -23,7 +23,7 @@ const emailA = `skillgraph-test-a+${runId}@example.invalid`;
 const emailB = `skillgraph-test-b+${runId}@example.invalid`;
 const emailFit = `skillgraph-test-fit+${runId}@example.invalid`;
 let userKeys = [];
-let results = { startedAt: new Date().toISOString(), DATABASE_CONNECTIVITY_PASS: false, BACKEND_BUILD_PASS: true, AUTHORIZATION_TEST_PASS: false, BUSINESS_API_TEST_PASS: false, ADMIN_API_TEST_PASS: false, ADMIN_DRAFT_GATES_TEST_PASS: false, ADMIN_MAPPING_DUPLICATE_TEST_PASS: false, PASSWORD_CHANGE_TRANSACTION_PASS: false, ADMIN_ROLE_CHANGE_SESSION_REVOCATION_TEST_PASS: false, LAST_ACTIVE_ADMIN_TEST_PASS: false, LAST_ACTIVE_ADMIN_CONCURRENCY_TEST_STATUS: "UNVERIFIED", EMPTY_PROFILE_TEST_PASS: false, FULL_CAREER_FIT_TEST_PASS: false, GRAPH_PRIVACY_TEST_PASS: false, SKILL_RESOURCE_COUNT_TEST_PASS: false, LEARNING_PATH_TEST_PASS: false, LEARNING_PATH_PREREQUISITE_TEST_PASS: false, LEARNING_PATH_NO_RESOURCE_TEST_PASS: false, MULTI_USER_TEST_PASS: false };
+let results = { startedAt: new Date().toISOString(), DATABASE_CONNECTIVITY_PASS: false, BACKEND_BUILD_PASS: true, AUTHORIZATION_TEST_PASS: false, BUSINESS_API_TEST_PASS: false, ADMIN_API_TEST_PASS: false, ADMIN_PREREQUISITES_READ_TEST_PASS: false, DATABASE_COLLECTION_CATEGORIES_TEST_PASS: false, ADMIN_DRAFT_GATES_TEST_PASS: false, ADMIN_MAPPING_DUPLICATE_TEST_PASS: false, PASSWORD_CHANGE_TRANSACTION_PASS: false, ADMIN_ROLE_CHANGE_SESSION_REVOCATION_TEST_PASS: false, LAST_ACTIVE_ADMIN_TEST_PASS: false, LAST_ACTIVE_ADMIN_CONCURRENCY_TEST_STATUS: "UNVERIFIED", EMPTY_PROFILE_TEST_PASS: false, FULL_CAREER_FIT_TEST_PASS: false, GRAPH_PRIVACY_TEST_PASS: false, SKILL_RESOURCE_COUNT_TEST_PASS: false, LEARNING_PATH_TEST_PASS: false, LEARNING_PATH_PREREQUISITE_TEST_PASS: false, LEARNING_PATH_NO_RESOURCE_TEST_PASS: false, MULTI_USER_TEST_PASS: false };
 let stage = "startup";
 
 function headers(cookie = null, jsonBody = false) {
@@ -311,6 +311,21 @@ try {
   const adminLogin = await api("/auth/login", { method: "POST", body: { email: adminEmail, password: adminPassword } });
   assert.equal(adminLogin.response.status, 200);
   const adminCookie = cookieFrom(adminLogin.response);
+  const prerequisites = await api("/admin/skill-prerequisites", { cookie: adminCookie });
+  assert.equal(prerequisites.response.status, 200);
+  assert.equal(prerequisites.payload.length, 6, "only the six source-backed approved Batch 2 prerequisite edges should be listed");
+  assert.ok(prerequisites.payload.every((edge) => edge.status === "approved" && edge.sourceUrl?.startsWith("https://") && edge.direction === "dependent → foundation" && edge.dependentSkillName && edge.foundationSkillName));
+  assert.ok(prerequisites.payload.every((edge) => edge.dependentSkillId.startsWith("skills/") && edge.foundationSkillId.startsWith("skills/")));
+  const regularUserLogin = await api("/auth/login", { method: "POST", body: { email: emailA, password: changedPassword } });
+  assert.equal(regularUserLogin.response.status, 200);
+  const regularUserCookie = cookieFrom(regularUserLogin.response);
+  assert.equal((await api("/admin/skill-prerequisites", { cookie: regularUserCookie })).response.status, 403, "regular User cannot read Admin prerequisite list");
+  results.ADMIN_PREREQUISITES_READ_TEST_PASS = true;
+  const databaseStatus = await api("/admin/database/status", { cookie: adminCookie });
+  assert.equal(databaseStatus.response.status, 200);
+  assert.equal(databaseStatus.payload.collectionCount, 41);
+  assert.deepEqual({ core: databaseStatus.payload.collectionGroups.core.count, app: databaseStatus.payload.collectionGroups.application.count, system: databaseStatus.payload.collectionGroups.system.count }, { core: 25, app: 8, system: 8 });
+  results.DATABASE_COLLECTION_CATEGORIES_TEST_PASS = true;
   const stats = await api("/admin/statistics", { cookie: adminCookie });
   assert.equal(stats.response.status, 200);
   const userPage = await api("/admin/users?page=1&pageSize=100", { cookie: adminCookie });

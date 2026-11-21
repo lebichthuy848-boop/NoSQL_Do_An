@@ -1,0 +1,163 @@
+{
+  "status": "PASS",
+  "scope": "READ_ONLY_E2E_BATCH_2_CORE_AUDIT",
+  "generatedAt": "2026-11-21T04:39:47.636Z",
+  "database": "skill_graph_v366_acceptance",
+  "arangoVersion": "3.12.11",
+  "collectionGroups": {
+    "total": 41,
+    "core": 25,
+    "app": 8,
+    "system": 8
+  },
+  "expected": {
+    "coreCollections": 25,
+    "documentsAndEdges": 5990,
+    "edges": 3099,
+    "graphEdgeDefinitions": 13,
+    "careers": 12,
+    "skills": 420,
+    "requires_skill": 932,
+    "courses": 510,
+    "providers": 183,
+    "teaches": 678,
+    "eligibleCourses": 173,
+    "allowedMappings": 245,
+    "approvedEvidencePrerequisites": 6,
+    "coverage": {
+      "overall": "227/420",
+      "essential": "143/221",
+      "optional": "136/267"
+    }
+  },
+  "actual": {
+    "coreCollections": 25,
+    "coreCollectionNames": [
+      "careers",
+      "completed",
+      "course_entry_skill",
+      "course_offers",
+      "course_prerequisite_evidence",
+      "course_url_access_observations",
+      "courses",
+      "data_sources",
+      "esco_group_broader",
+      "esco_skill_broader",
+      "esco_skill_group",
+      "esco_skill_knowledge",
+      "has_skill",
+      "learning_plans",
+      "offered_by",
+      "prerequisite",
+      "providers",
+      "requires_skill",
+      "skill_assessments",
+      "skill_groups",
+      "skill_prerequisite",
+      "skills",
+      "targets_career",
+      "teaches",
+      "users"
+    ],
+    "coreDocumentsAndEdges": 5990,
+    "coreEdges": 3099,
+    "namedGraphs": 1,
+    "graphEdgeDefinitions": 13,
+    "counts": {
+      "careers": 12,
+      "completed": 1,
+      "course_entry_skill": 3,
+      "course_offers": 510,
+      "course_prerequisite_evidence": 15,
+      "course_url_access_observations": 633,
+      "courses": 510,
+      "data_sources": 455,
+      "esco_group_broader": 147,
+      "esco_skill_broader": 156,
+      "esco_skill_group": 420,
+      "esco_skill_knowledge": 118,
+      "has_skill": 124,
+      "learning_plans": 1,
+      "offered_by": 510,
+      "prerequisite": 1,
+      "providers": 183,
+      "requires_skill": 932,
+      "skill_assessments": 0,
+      "skill_groups": 149,
+      "skill_prerequisite": 6,
+      "skills": 420,
+      "targets_career": 3,
+      "teaches": 678,
+      "users": 3
+    },
+    "eligibleCourses": 173,
+    "allowedMappings": 245,
+    "invalidAllowedMappings": 0,
+    "eligibleCoursesWithoutMapping": 0,
+    "approvedEvidencePrerequisites": 6,
+    "coverage": {
+      "overall": "227/420",
+      "essential": "143/221",
+      "optional": "136/267"
+    },
+    "graphIntegrity": {
+      "danglingEndpoints": 0,
+      "invalidGraphEndpoints": 0,
+      "selfLoops": 0,
+      "duplicateEdgePairs": 0
+    }
+  },
+  "differences": {
+    "missingCollections": [],
+    "unexpectedCoreCollections": [],
+    "countMismatches": [],
+    "contentMismatches": [],
+    "unmappedGraphEdgeCollections": []
+  },
+  "protectedFingerprints": {
+    "careers": {
+      "stored": "93a4f72c1db9228311ee2739b1bfde7487bd3aeb52aedbe8bfc759e0d91f4e58",
+      "baseline": "ef9d80ffa90a5cc0d6f5c1871e99226393b9f487121eaba7e42bbb85dcde2f20",
+      "actual": "ef9d80ffa90a5cc0d6f5c1871e99226393b9f487121eaba7e42bbb85dcde2f20",
+      "baselineMatchesActual": true,
+      "storedMatchesCanonicalMethod": false
+    },
+    "skills": {
+      "stored": "c3b591c544d00cd1d38756195b4baffab5b0bf15a7c23c45271f174442269288",
+      "baseline": "18e5e8d0724c3355ab307add10d8f85667ea6d5249fe5d37cc6dd6c56ca76194",
+      "actual": "18e5e8d0724c3355ab307add10d8f85667ea6d5249fe5d37cc6dd6c56ca76194",
+      "baselineMatchesActual": true,
+      "storedMatchesCanonicalMethod": false
+    },
+    "requires_skill": {
+      "stored": "70201dcb8882acb561f864ec41a505f3fd864e7ed5dea9dbd087efe70d749e26",
+      "baseline": "cc43f90a2c99264a6c224daf7538dfff0ad667d6b47aa4c8db53bd31d96f670a",
+      "actual": "cc43f90a2c99264a6c224daf7538dfff0ad667d6b47aa4c8db53bd31d96f670a",
+      "baselineMatchesActual": true,
+      "storedMatchesCanonicalMethod": false
+    }
+  },
+  "checks": {
+    "expectedDatabase": true,
+    "expectedArangoVersion": true,
+    "coreCollectionNamesMatch": true,
+    "collectionCountsMatch": true,
+    "coreDocuments": true,
+    "coreEdges": true,
+    "graphEdgeDefinitions": true,
+    "careers": true,
+    "skills": true,
+    "requiresSkill": true,
+    "courses": true,
+    "providers": true,
+    "teaches": true,
+    "recommendationEligibleCourses": true,
+    "allowedTeachesMappings": true,
+    "recommendationGates": true,
+    "sourceBackedApprovedPrerequisites": true,
+    "coverage": true,
+    "graphDefinitionsCoverEdgeCollections": true,
+    "graphIntegrity": true,
+    "coreContentMatchesSource": true
+  }
+}

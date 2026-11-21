@@ -1,7 +1,15 @@
 import { create } from 'zustand';
 import { apiRequest } from '../../../api/http';
 
-type DatabaseStatus = { status: 'available'; version: string; database: string | null; collectionCount: number; checkedAt: string };
+type CollectionGroup = { count: number; names: string[] };
+type DatabaseStatus = {
+  status: 'available';
+  version: string;
+  database: string | null;
+  collectionCount: number;
+  collectionGroups: { core: CollectionGroup; application: CollectionGroup; system: CollectionGroup };
+  checkedAt: string;
+};
 type AdminState = {
   catalogStatus: 'loading' | 'live' | 'error';
   catalogFetchedAt: number | null;

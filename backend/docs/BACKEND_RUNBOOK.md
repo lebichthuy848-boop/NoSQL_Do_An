@@ -133,3 +133,19 @@ Run each read-only query in backend/scripts/demo-queries.aql separately in Arang
 - Coverage and unfiltered skills list: no bind variables.
 
 All recommendation/resource results require both recommendation_eligible and auto_recommendation_allowed to be literal true. Skill Gap and Career Fit measure declared skill presence only, not proficiency.
+
+## Final release checks (2026-11-21)
+
+From the repository root and only against the isolated E2E DB, run the read-only Batch 2 integrity audit:
+
+```powershell
+node --env-file=backend/.env.e2e-20261121-runtime backend/scripts/audit-e2e-integrity.mjs
+```
+
+To record a small Import/Export round trip, the script creates one marked row in `app_audit_log`, exports it through an AQL cursor, compares fields and SHA-256, and removes its own row:
+
+```powershell
+node --env-file=backend/.env.e2e-20261121-runtime backend/scripts/import-export-e2e-test.mjs
+```
+
+Both scripts reject a database URL/name or runtime principal outside the approved E2E target. The integrity report is in `docs/evidence/integrity-audit-e2e-2026-11-21.json`. The UI displays that dated PASS snapshot only when DB/version/core collection names match; it is not a live content check. Query 13 in `scripts/demo-queries.aql` still needs a separate Web Interface run and screenshot if GUI evidence is required. Do not restore the unavailable historical archive or create a restore on the demo volume.

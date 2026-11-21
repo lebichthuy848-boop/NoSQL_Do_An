@@ -182,16 +182,33 @@ export class AdminService {
         this.db.request("/_api/collection", { system: false }),
         this.db.request("/_api/database/current", { system: false }),
       ]);
+      const rows = collections.result || [];
+      const collectionGroups = { core: [], application: [], system: [] };
+      for (const collection of rows) {
+        const name = collection.name;
+        if (typeof name !== "string") continue;
+        if (collection.isSystem === true || name.startsWith("_")) collectionGroups.system.push(name);
+        else if (name.startsWith("app_")) collectionGroups.application.push(name);
+        else collectionGroups.core.push(name);
+      }
+      for (const names of Object.values(collectionGroups)) names.sort((a, b) => a.localeCompare(b));
       return {
         status: "available",
         version: version.version,
         database: database.result?.name || null,
-        collectionCount: (collections.result || []).length,
+        collectionCount: rows.length,
+        collectionGroups: Object.fromEntries(Object.entries(collectionGroups).map(([group, names]) => [group, { count: names.length, names }])),
         checkedAt: nowIso(),
       };
     } catch {
       throw new HttpError(503, "DATABASE_UNAVAILABLE", "Database status could not be read");
     }
+  }
+
+  async skillPrerequisites() {
+    return this.db.query(
+      "FOR edge IN skill_prerequisite FILTER edge.approved_for_learning_path == true AND edge.is_demo != true AND edge._from != edge._to AND STARTS_WITH(edge._from, 'skills/') AND STARTS_WITH(edge._to, 'skills/') AND edge.source_url != null AND edge.source_url != '' AND (STARTS_WITH(LOWER(edge.source_url), 'https://') OR STARTS_WITH(LOWER(edge.source_url), 'http://')) LET dependent = DOCUMENT(edge._from) LET foundation = DOCUMENT(edge._to) FILTER dependent != null AND foundation != null SORT LOWER(dependent.name), LOWER(foundation.name) RETURN { key: edge._key, dependentSkillId: edge._from, dependentSkillName: dependent.name, foundationSkillId: edge._to, foundationSkillName: foundation.name, direction: 'dependent → foundation', status: 'approved', source: edge.source || null, sourceReviewStatus: edge.source_review_status || null, evidenceScope: edge.evidence_scope || null, sourceUrl: edge.source_url }",
+    );
   }
 
   async resources(query) {

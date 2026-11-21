@@ -5,8 +5,9 @@ import { apiRequest } from '../../../api/http';
 import type { AdminRecord, FieldSpec } from '../types/admin';
 import type { AdminOutlet } from './AdminLayout';
 import { RequestGeneration } from '../../../utils/requestGeneration';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 
-type Page = 'careers' | 'skills' | 'providers' | 'courses' | 'course-skill-mappings' | 'career-skills' | 'skill-prerequisites';
+type Page = 'careers' | 'skills' | 'providers' | 'courses' | 'course-skill-mappings' | 'career-skills';
 type DraftRoute = { base: string; fields: FieldSpec[]; columns: string[]; title: string; eyebrow: string; description: string };
 const draftRoutes: Partial<Record<Page, DraftRoute>> = {
   providers: { base: '/admin/providers', title: 'Nhà cung cấp đề xuất', eyebrow: 'PROVIDER DRAFTS', description: 'Nhà cung cấp mới được tạo dưới dạng draft trong app_* và cần bằng chứng trước khi phê duyệt.', fields: [{ key: 'name', label: 'Tên nhà cung cấp', required: true }, { key: 'officialWebsite', label: 'Website chính thức', type: 'url', required: true }], columns: ['name', 'officialWebsite'] },
@@ -48,6 +49,7 @@ export default function AdminTablePage({ page }: { page: Page }) {
   const [pageNo, setPageNo] = useState(1);
   const [modal, setModal] = useState<'new' | 'edit' | 'detail' | 'review' | null>(null);
   const [selected, setSelected] = useState<AdminRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminRecord | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [reviewForm, setReviewForm] = useState({ evidenceUrl: '', evidenceScope: 'direct_topic', sourceSummary: '', mappingQualityDecision: '' });
   const [decision, setDecision] = useState<'approve' | 'reject'>('approve');
@@ -83,6 +85,11 @@ export default function AdminTablePage({ page }: { page: Page }) {
     void loadRows();
     return () => loadGeneration.current.invalidate();
   }, [page, statusFilter]);
+  useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(''), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
 
   const query = `${search} ${globalSearch}`.trim().toLowerCase();
   const filtered = useMemo(() => rows.filter((row) => { const matches = !query || Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(query)); const state = String(row.status || (row.recommendationEligible === true ? 'approved' : 'pending')); return matches && (statusFilter === 'all' || state === statusFilter); }), [rows, query, statusFilter]);
@@ -115,13 +122,17 @@ export default function AdminTablePage({ page }: { page: Page }) {
     } catch (cause) { setFormError(cause instanceof Error ? cause.message : 'Backend không lưu được draft.'); }
     finally { setSaving(false); }
   }
-  async function deleteDraft(row: AdminRecord) {
-    if (!draft || statusOf(row) !== 'pending' || !window.confirm(`Xóa draft “${titleOf(row)}”?`)) return;
+  function deleteDraft(row: AdminRecord) {
+    if (!draft || statusOf(row) !== 'pending') return;
+    setDeleteTarget(row); setFormError('');
+  }
+  async function confirmDeleteDraft() {
+    if (!draft || !deleteTarget || statusOf(deleteTarget) !== 'pending') return;
     setSaving(true); setFormError('');
     try {
-      await apiRequest(`${draft.base}/${encodeURIComponent(row._key)}`, { method: 'DELETE' });
-      setMessage('Draft đã được xóa.'); await loadRows();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Backend không xóa được draft.'); }
+      await apiRequest(`${draft.base}/${encodeURIComponent(deleteTarget._key)}`, { method: 'DELETE' });
+      setMessage('Draft đã được xóa.'); setDeleteTarget(null); await loadRows();
+    } catch (cause) { setFormError(cause instanceof Error ? cause.message : 'Backend không xóa được draft.'); }
     finally { setSaving(false); }
   }
   async function submitReview(event: FormEvent) {
@@ -135,8 +146,6 @@ export default function AdminTablePage({ page }: { page: Page }) {
     } catch (cause) { setFormError(cause instanceof Error ? cause.message : 'Backend không hoàn tất xét duyệt.'); }
     finally { setSaving(false); }
   }
-
-  if (page === 'skill-prerequisites') return <div className="admin-page"><div className="admin-page-heading"><div><div className="admin-eyebrow">PREREQUISITE · READ ONLY</div><h1>Skill Prerequisite</h1><p>Backend hiện không cung cấp API liệt kê hoặc CRUD prerequisite. Để bảo vệ dữ liệu lõi, trang này không hiển thị snapshot và không nhận thao tác ghi.</p></div></div><div className="admin-empty"><strong>Chưa hỗ trợ API prerequisite</strong><p>Learning Path chỉ sử dụng các quan hệ đã duyệt, có nguồn chứng cứ theo API Backend.</p></div></div>;
 
   return <div className="admin-page">
     <div className="admin-page-heading"><div><div className="admin-eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{editable && <button className="admin-btn primary" onClick={() => openForm()}><CirclePlus size={17} /> Tạo draft</button>}</div>
@@ -158,5 +167,13 @@ export default function AdminTablePage({ page }: { page: Page }) {
     {(modal === 'new' || modal === 'edit') && draft && <div className="admin-modal-backdrop"><form className="admin-modal admin-editor" onSubmit={save}><button type="button" className="admin-modal-close" onClick={() => setModal(null)}><X size={18} /></button><span className="admin-modal-icon"><Pencil size={19} /></span><h2>{modal === 'edit' ? 'Sửa draft đang chờ' : 'Tạo draft mới'}</h2><p>Backend sẽ lưu thao tác trong các collection app_*.</p><div className="admin-editor-grid">{draft.fields.map((field) => <label className="admin-form-field" key={field.key}>{field.label}{field.type === 'select' ? <select required={field.required} value={form[field.key] || ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })}><option value="">Chọn…</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select> : <input required={field.required} type={field.type === 'url' ? 'url' : 'text'} value={form[field.key] || ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} />}</label>)}</div>{formError && <div className="admin-form-error" role="alert">{formError}</div>}<div className="admin-modal-actions"><button type="button" className="admin-btn" disabled={saving} onClick={() => setModal(null)}>Hủy</button><button className="admin-btn primary" type="submit" disabled={saving}><Check size={16} />{saving ? 'Đang lưu…' : 'Lưu draft'}</button></div></form></div>}
     {modal === 'review' && selected && draft && <div className="admin-modal-backdrop"><form className="admin-modal admin-editor" onSubmit={submitReview}><button type="button" className="admin-modal-close" onClick={() => setModal(null)}><X size={18} /></button><span className="admin-modal-icon"><Check size={19} /></span><h2>{decision === 'approve' ? 'Duyệt draft' : 'Từ chối draft'}</h2><p>{titleOf(selected)} · ghi lại URL và ghi chú chứng cứ trong nhật ký quản trị.</p><div className="admin-editor-grid"><label className="admin-form-field wide">URL chứng cứ<input type="url" required value={reviewForm.evidenceUrl} onChange={(event) => setReviewForm({ ...reviewForm, evidenceUrl: event.target.value })} /></label>{page === 'course-skill-mappings' && <><label className="admin-form-field">Phạm vi chứng cứ<select required value={reviewForm.evidenceScope} onChange={(event) => setReviewForm({ ...reviewForm, evidenceScope: event.target.value })}><option value="direct_topic">direct_topic</option><option value="partial">partial</option></select></label>{decision === 'approve' && <label className="admin-form-field">Quyết định chất lượng mapping<select required value={reviewForm.mappingQualityDecision} onChange={(event) => setReviewForm({ ...reviewForm, mappingQualityDecision: event.target.value })}><option value="">Chọn quyết định…</option><option value="retain_with_scope">retain_with_scope</option><option value="retain_with_narrow_scope">retain_with_narrow_scope</option><option value="retain_with_scope_after_review">retain_with_scope_after_review</option><option value="retain_after_url_and_scope_review">retain_after_url_and_scope_review</option></select></label>}</>}<label className="admin-form-field wide">Tóm tắt chứng cứ<textarea required maxLength={2000} value={reviewForm.sourceSummary} onChange={(event) => setReviewForm({ ...reviewForm, sourceSummary: event.target.value })} /></label></div>{formError && <div className="admin-form-error" role="alert">{formError}</div>}<div className="admin-modal-actions"><button type="button" className="admin-btn" disabled={saving} onClick={() => setModal(null)}>Hủy</button><button className={`admin-btn ${decision === 'approve' ? 'primary' : 'danger'}`} type="submit" disabled={saving}>{saving ? 'Đang xử lý…' : decision === 'approve' ? 'Xác nhận duyệt' : 'Xác nhận từ chối'}</button></div></form></div>}
     {modal === 'detail' && selected && <div className="admin-modal-backdrop"><div className="admin-modal admin-detail"><button type="button" className="admin-modal-close" onClick={() => setModal(null)}><X size={18} /></button><span className="admin-eyebrow">{draft?.base || page} · {selected._key}</span><h2>{titleOf(selected)}</h2><pre>{JSON.stringify(selected, null, 2)}</pre><div className="admin-modal-actions"><button type="button" className="admin-btn" onClick={() => setModal(null)}>Đóng</button></div></div></div>}
+    {deleteTarget && <ConfirmDialog
+      title="Xóa draft đang chờ?"
+      description={`Draft “${titleOf(deleteTarget)}” sẽ bị xóa khỏi collection ứng dụng. Thao tác này không thể hoàn tác.`}
+      confirmLabel="Xóa draft"
+      busy={saving}
+      onCancel={() => { if (!saving) { setDeleteTarget(null); setFormError(''); } }}
+      onConfirm={() => void confirmDeleteDraft()}
+    >{formError && <div className="admin-form-error" role="alert">{formError}</div>}</ConfirmDialog>}
   </div>;
 }

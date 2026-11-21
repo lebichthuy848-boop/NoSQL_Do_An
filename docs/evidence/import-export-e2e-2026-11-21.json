@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "database": "skill_graph_v366_acceptance",
+  "import": {
+    "tool": "ArangoDB HTTP API /_api/import (type=array)",
+    "rows": 1
+  },
+  "export": {
+    "tool": "ArangoDB AQL cursor JSON response",
+    "rows": 1,
+    "sha256": "5c30d38fe4d060df1188630291529ff62da8b5611f15bd67efba11f391a73e14"
+  },
+  "roundTripFieldsMatch": true,
+  "cleanup": "PASS_AND_CLEANED",
+  "targetCollection": "app_audit_log",
+  "coreCollectionsWritten": false
+}

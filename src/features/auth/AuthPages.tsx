@@ -174,14 +174,36 @@ export function ResetPasswordPage() {
 }
 
 export function AccountPage() {
-  const { user, loading, error, refresh, logout } = useAuth(); const location = useLocation();
+  const { user, loading, error, refresh, logout, updateDisplayName } = useAuth(); const location = useLocation();
   const [busy, setBusy] = useState(false), [actionError, setActionError] = useState('');
+  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [profileBusy, setProfileBusy] = useState(false), [profileError, setProfileError] = useState(''), [profileNotice, setProfileNotice] = useState('');
+  useEffect(() => setDisplayName(user?.displayName || ''), [user?.id, user?.displayName]);
+  async function saveDisplayName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setProfileBusy(true); setProfileError(''); setProfileNotice('');
+    try {
+      await updateDisplayName(displayName.trim());
+      setProfileNotice('Tên hiển thị đã được cập nhật.');
+    } catch (cause) {
+      setProfileError(errorMessage(cause));
+    } finally {
+      setProfileBusy(false);
+    }
+  }
   if (loading) return <div className="auth-loading" role="status">Đang kiểm tra phiên đăng nhập…</div>;
   if (error) return <Frame title="Chưa tải được tài khoản" subtitle="Kiểm tra kết nối rồi thử lại."><Notice error={error} /><button className="auth-submit" onClick={() => void refresh()}>Thử lại</button></Frame>;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
   return <Frame title={`Xin chào, ${user.name}`} subtitle="Bạn đã đăng nhập vào SkillGraph.">
-    <dl className="auth-profile"><dt>Họ tên</dt><dd>{user.name}</dd>{user.email && <><dt>Email</dt><dd>{user.email}</dd></>}<dt>Vai trò</dt><dd>Người dùng</dd></dl>
+    <form className="auth-form" onSubmit={saveDisplayName}>
+      <fieldset disabled={profileBusy}>
+        <label className="auth-field">Tên hiển thị<input name="displayName" autoComplete="name" required maxLength={120} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
+        <button className="auth-submit" type="submit">{profileBusy ? 'Đang lưu…' : 'Lưu tên hiển thị'}</button>
+      </fieldset>
+    </form>
+    {profileError && <Notice error={profileError} />}
+    {profileNotice && <p className="auth-notice auth-success" role="status">{profileNotice}</p>}
+    <dl className="auth-profile">{user.email && <><dt>Email (chỉ đọc)</dt><dd>{user.email}</dd></>}<dt>Vai trò</dt><dd>Người dùng</dd></dl>
     <Notice error={actionError} /><Link className="auth-submit" to="/careers">Khám phá nghề nghiệp <ArrowRight size={18} /></Link>
     <PasswordChangeForm /><p className="auth-switch"><Link to="/forgot-password">Quên mật khẩu?</Link></p>
     <button className="auth-logout" disabled={busy} onClick={async () => { setBusy(true); setActionError(''); try { await logout(); } catch (e) { setActionError(errorMessage(e)); } finally { setBusy(false); } }}>{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>

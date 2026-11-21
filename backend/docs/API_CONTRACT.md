@@ -2,7 +2,7 @@
 
 Base URL: `http://127.0.0.1:39530/api/v1` for the local operational setup. All endpoints use UTF-8 JSON unless noted. API version: `v1`.
 
-This contract follows the checked-in React routes and `HttpCatalogClient` where they exist, then adds the agreed authentication, user-learning and Admin APIs. Login/register/Admin Frontend pages are not present in the checked-in snapshot, so their form-field compatibility awaits the parallel Frontend handoff.
+This contract describes the current React routes and Node/ArangoDB Backend API on the integration branch.
 
 ## Shared conventions
 
@@ -84,7 +84,8 @@ All Admin routes require role `admin`; Guest/User requests return `401`/`403`. T
 | `GET /admin/users/:id` | User key or ID | Safe user detail; 404 if missing. | `app_users` |
 | `PATCH /admin/users/:id` | `{displayName?,role?,status?}` | Updates permitted fields, revokes sessions on role/status change, refuses demotion/disable of final active Admin (`409 LAST_ACTIVE_ADMIN`). | `app_users`, `app_sessions`, `app_audit_log` |
 | `GET /admin/statistics` | None | Counts and coverage calculated from actual collections; no fabricated values. | `app_users`, official catalog collections, draft collections |
-| `GET /admin/database/status` | None | Connection/version and collection status; does not expose credentials. | Arango version/collection APIs |
+| `GET /admin/database/status` | None | Connection/version/database, check time, total collections, and names/counts split into core, `app_*`, and ArangoDB system groups. It does not expose credentials or claim an integrity audit. | Arango version, current database, and collection APIs |
+| `GET /admin/skill-prerequisites` | None | Read-only list of approved, non-demo, evidence-backed `dependent → foundation` skill edges with both skill names, approval state, source URL, and review metadata. There is no write route. | `skill_prerequisite`, `skills` |
 | `GET /admin/audit-log` | `page`, `pageSize` | Paged audit records. | `app_audit_log` |
 | `GET/POST /admin/resources` | List: `status,page,pageSize`; create: `{title,canonicalUrl,providerName,resourceType,language?}` | App-owned resource drafts. Create starts `pending` and recommendation-ineligible. | `app_resource_drafts`, `app_audit_log` |
 | `GET/PATCH/DELETE /admin/resources/:id` | Patch accepts the same resource fields; delete requires no mappings | Pending drafts only. Reviewed records cannot be edited/deleted. | `app_resource_drafts`, `app_mapping_drafts`, `app_audit_log` |

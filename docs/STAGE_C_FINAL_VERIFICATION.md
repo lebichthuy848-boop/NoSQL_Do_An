@@ -1,5 +1,7 @@
 # Biên bản nghiệm thu Stage C
 
+> Đây là receipt lịch sử của Stage C, không phải xác nhận các thay đổi UI trong final release. Xem `FINAL_DEMO_READINESS.md` để biết audit, tests, giới hạn và trạng thái bàn giao mới nhất.
+
 Ngày: 21/11/2026
 Branch: agent/skill-graph-integration
 Commit nền lúc bắt đầu: 68ef12b8ae58d6d43b46195e6cefae6c4be3ec12 (cùng commit với main)

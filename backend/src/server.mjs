@@ -238,6 +238,7 @@ export function createApplication({ db, config = loadConfig(), services = null }
 
     if (route.startsWith("/admin")) {
       const { user } = await currentUser(request, "admin");
+      if (method === "GET" && route === "/admin/skill-prerequisites") return json(response, 200, await admin.skillPrerequisites());
       if (method === "GET" && route === "/admin/users") return pageResponse(response, await admin.users(url.searchParams));
       if (method === "POST" && route === "/admin/users") {
         rejectUnknownFields(body, ["email", "password", "displayName", "role"]); requireFields(body, ["email", "password", "displayName"]);

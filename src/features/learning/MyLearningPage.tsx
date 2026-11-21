@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BookOpen, Eye, Save, Check } from 'lucide-react';
 import { getCatalogRepository } from '../../repositories/catalogRepository';
 import { useUserStore } from '../../stores/userStore';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 type Filter = 'all' | 'saved' | 'planned' | 'viewed' | 'completed';
 type LearningState = Pick<ReturnType<typeof useUserStore.getState>, 'savedResourceIds' | 'plannedResourceIds' | 'viewedResourceIds' | 'completedResourceIds'>;
@@ -134,6 +135,13 @@ export default function MyLearningPage() {
   const state = useUserStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [notice, setNotice] = useState('');
+  const [pendingUnsave, setPendingUnsave] = useState<{ id: string; title: string } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(''), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   const items = filterLearningResources(repo.getCourses(), state, filter);
   const filters: Filter[] = ['all', 'saved', 'planned', 'viewed', 'completed'];
   const runAction = async (successMessage: string, action: () => Promise<boolean>) => {
@@ -147,7 +155,7 @@ export default function MyLearningPage() {
   return <div className="container">
     <div className="page-head"><div className="eyebrow">HỌC LIỆU CÁ NHÂN</div><h1>Học liệu của tôi</h1><p>Đã xem và đã hoàn thành là hai trạng thái riêng. Hoàn thành học liệu không xác nhận thành thạo kỹ năng.</p></div>
     {state.error && <div className="warning" role="alert">{state.error}</div>}
-    {notice && <p role="status" className="learning-action-notice">{notice}</p>}
+    {notice && <div role="status" className="admin-toast"><Check size={16} />{notice}<button type="button" onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
     <div className="tabs">{filters.map((value) => <button className={filter === value ? 'active' : ''} onClick={() => setFilter(value)} key={value}>{value === 'all' ? 'Tất cả' : value === 'saved' ? 'Đã lưu' : value === 'planned' ? 'Dự định học' : value === 'viewed' ? 'Đã xem' : 'Đã hoàn thành'}</button>)}</div>
     {repo.status === 'error' ? <div className="warning" role="alert">Chưa thể hiển thị học liệu vì catalog chưa tải được. Hãy thử tải lại catalog ở thông báo phía trên.</div> : items.length ? <div className="learning-list">{items.map((item) => {
       const id = item.id;
@@ -157,7 +165,7 @@ export default function MyLearningPage() {
       const viewed = state.viewedResourceIds.includes(id);
       const completed = state.completedResourceIds.includes(id);
       const toggleSaved = () => {
-        if (saved && requiresUnsaveConfirmation(id, state) && !window.confirm(`Bỏ lưu “${item.title}”? Học liệu sẽ rời khỏi “Tất cả” vì hiện không còn trạng thái nào khác.`)) return;
+        if (saved && requiresUnsaveConfirmation(id, state)) { setPendingUnsave({ id, title: item.title }); return; }
         void runAction(saved ? 'Đã bỏ lưu học liệu.' : 'Đã lưu học liệu.', () => state.toggleSaved(id));
       };
       return <article key={id}><span className="card-icon"><BookOpen /></span><div><Link to={'/resources/' + encodeURIComponent(id)}><h3>{item.title}</h3></Link><p>{item.providerName}</p><div className="learning-actions">
@@ -167,5 +175,20 @@ export default function MyLearningPage() {
         <button disabled={saving} aria-pressed={completed} onClick={() => void runAction(completed ? 'Đã bỏ trạng thái hoàn thành.' : 'Đã đánh dấu hoàn thành.', () => state.setCompleted(id, !completed))}><Check /> {completed ? 'Bỏ hoàn thành' : 'Hoàn thành'}</button>
       </div><NoteEditor key={id} resourceId={id} title={item.title} value={state.notes[id] || ''} draftValue={state.noteDrafts[id]} setDraftValue={state.setNoteDraft} onSave={state.setNote} /></div></article>;
     })}</div> : <div className="empty"><BookOpen /><h3>{state.initialized ? 'Chưa có học liệu trong mục này' : 'Đang đồng bộ hồ sơ'}</h3><Link className="btn primary" to="/resources">Khám phá học liệu</Link></div>}
+    {pendingUnsave && <ConfirmDialog
+      title="Bỏ lưu học liệu?"
+      description={`“${pendingUnsave.title}” sẽ rời khỏi mục “Tất cả” vì hiện không còn trạng thái học nào khác.`}
+      confirmLabel="Bỏ lưu"
+      busy={confirmBusy}
+      onCancel={() => setPendingUnsave(null)}
+      onConfirm={() => {
+        if (confirmBusy || !pendingUnsave) return;
+        setConfirmBusy(true);
+        setNotice('');
+        void state.toggleSaved(pendingUnsave.id).then((success) => {
+          if (success) { setNotice('Đã bỏ lưu học liệu.'); setPendingUnsave(null); }
+        }).finally(() => setConfirmBusy(false));
+      }}
+    />}
   </div>;
 }

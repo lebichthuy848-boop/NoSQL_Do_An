@@ -1,0 +1,27 @@
+export const latestIntegritySnapshot = {
+  generatedAt: '2026-11-21T04:39:47.636Z',
+  database: 'skill_graph_v366_acceptance',
+  version: '3.12.11',
+  coreCollectionNames: [
+    'careers', 'completed', 'course_entry_skill', 'course_offers', 'course_prerequisite_evidence',
+    'course_url_access_observations', 'courses', 'data_sources', 'esco_group_broader', 'esco_skill_broader',
+    'esco_skill_group', 'esco_skill_knowledge', 'has_skill', 'learning_plans', 'offered_by', 'prerequisite',
+    'providers', 'requires_skill', 'skill_assessments', 'skill_groups', 'skill_prerequisite', 'skills',
+    'targets_career', 'teaches', 'users',
+  ],
+  summary: {
+    coreCollections: 25,
+    documentsAndEdges: 5990,
+    edges: 3099,
+    graphEdgeDefinitions: 13,
+    eligibleCourses: 173,
+    allowedMappings: 245,
+    approvedEvidencePrerequisites: 6,
+    coverage: { overall: '227/420', essential: '143/221', optional: '136/267' },
+    invalidAllowedMappings: 0,
+    eligibleCoursesWithoutAllowedMappings: 0,
+    graphIntegrityErrors: 0,
+    coreContentMatchesSource: true,
+  },
+  status: 'PASS',
+} as const;
