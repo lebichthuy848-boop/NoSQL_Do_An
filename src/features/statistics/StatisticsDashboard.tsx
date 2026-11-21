@@ -1,183 +1,62 @@
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { getCatalogRepository } from "../../repositories/catalogRepository";
-const repo = getCatalogRepository(),
-  colors = ["#4f46e5", "#06b6d4", "#7c3aed", "#10b981", "#f59e0b", "#f43f5e"];
-const count = (xs: string[]) =>
-  [
-    ...xs.reduce(
-      (m, x) => m.set(x, (m.get(x) || 0) + 1),
-      new Map<string, number>(),
-    ),
-  ]
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-export default function StatisticsDashboard() {
-  const p = repo.getRaw(),
-    m = p.manifest as any,
-    rows = repo.getCoverageReport(),
-    resourceTypes = count(repo.getCourses().map((x) => x.resourceType)).slice(
-      0,
-      8,
-    ),
-    skillTypes = count(repo.getSkills().map((x) => x.skillType)),
-    relations = [
-      "requires_skill",
-      "teaches",
-      "offered_by",
-      "esco_skill_group",
-      "esco_skill_broader",
-      "esco_group_broader",
-      "esco_skill_knowledge",
-    ].map((name) => ({ name, value: p.collections[name].length }));
-  return (
-    <div className="container">
-      <div className="page-head">
-        <div className="eyebrow">TỔNG QUAN DỮ LIỆU</div>
-        <h1>Thống kê dữ liệu</h1>
-        <p>
-          Coverage phản ánh liên kết direct_topic, không phải career fit score
-          hay mức thành thạo.
-        </p>
-      </div>
-      <div className="stat-summary">
-        <div>
-          <strong>{Number(m.records).toLocaleString("vi-VN")}</strong>
-          <span>Tổng bản ghi</span>
-        </div>
-        <div>
-          <strong>
-            {m.essential_direct}/{m.essential_total}
-          </strong>
-          <span>Essential direct_topic</span>
-        </div>
-        <div>
-          <strong>{m.essential_missing}</strong>
-          <span>Essential chưa có direct_topic</span>
-        </div>
-      </div>
-      <div className="chart-grid">
-        <Chart title="Coverage Essential theo nghề">
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={rows} margin={{ left: 0, right: 8, bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="career"
-                interval={0}
-                angle={-35}
-                textAnchor="end"
-                fontSize={9}
-              />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar
-                dataKey="covered"
-                name="Có direct_topic"
-                stackId="a"
-                fill="#4f46e5"
-              />
-              <Bar
-                dataKey="missing"
-                name="Còn thiếu"
-                stackId="a"
-                fill="#f59e0b"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </Chart>
-        <Chart title="Loại kỹ năng">
-          <ResponsiveContainer width="100%" height={320}>
-            <PieChart>
-              <Pie
-                data={skillTypes}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={3}
-              >
-                {skillTypes.map((_, i) => (
-                  <Cell key={i} fill={colors[i % colors.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </Chart>
-        <Chart title="Định dạng học liệu phổ biến">
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart
-              data={resourceTypes}
-              layout="vertical"
-              margin={{ left: 120 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="name" fontSize={9} width={115} />
-              <Tooltip />
-              <Bar
-                dataKey="value"
-                name="Học liệu"
-                fill="#06b6d4"
-                radius={[0, 6, 6, 0]}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </Chart>
-        <Chart title="Phân bố quan hệ đồ thị">
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={relations} layout="vertical" margin={{ left: 100 }}>
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="name" width={100} fontSize={9} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#7c3aed" radius={[0, 6, 6, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Chart>
-      </div>
-      <section className="content-section">
-        <h2>Chi tiết coverage theo nghề</h2>
-        <div className="coverage-list">
-          {rows.map((x) => (
-            <div key={x.career}>
-              <div>
-                <b>{x.career}</b>
-                <span>
-                  {x.covered}/{x.essential} · thiếu {x.missing}
-                </span>
-              </div>
-              <div className="bar">
-                <i style={{ width: `${x.pct}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
+  Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts';
+import { useApiData } from '../../api/hooks';
+
+type CoverageMetric = { covered: number; total: number; ratio: number; missing: number };
+export type CoverageCareerRow = {
+  career: string;
+  essential: CoverageMetric;
+  optional: Omit<CoverageMetric, 'missing'>;
+};
+
+export function finiteCoverageNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
-const Chart = ({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) => (
-  <section className="chart-card">
-    <h3>{title}</h3>
-    {children}
-  </section>
-);
+
+export function normalizeCoverageRows(value: unknown): CoverageCareerRow[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item: any) => {
+    const essentialCovered = finiteCoverageNumber(item?.essential?.covered);
+    const essentialTotal = finiteCoverageNumber(item?.essential?.total);
+    const optionalCovered = finiteCoverageNumber(item?.optional?.covered);
+    const optionalTotal = finiteCoverageNumber(item?.optional?.total);
+    return {
+      career: typeof item?.career === 'string' ? item.career : '',
+      essential: {
+        covered: essentialCovered,
+        total: essentialTotal,
+        ratio: finiteCoverageNumber(item?.essential?.ratio),
+        missing: Math.max(0, essentialTotal - essentialCovered),
+      },
+      optional: {
+        covered: optionalCovered,
+        total: optionalTotal,
+        ratio: finiteCoverageNumber(item?.optional?.ratio),
+      },
+    };
+  });
+}
+
+export default function StatisticsDashboard() {
+  const release = useApiData<any>('/meta/release');
+  const coverage = useApiData<any>('/statistics/coverage');
+  const rows = normalizeCoverageRows(coverage.data?.perCareer);
+  const essentialCovered = finiteCoverageNumber(coverage.data?.essential?.covered);
+  const essentialTotal = finiteCoverageNumber(coverage.data?.essential?.total);
+  const optionalCovered = finiteCoverageNumber(coverage.data?.optional?.covered);
+  const optionalTotal = finiteCoverageNumber(coverage.data?.optional?.total);
+  const recommendationEligibleSkills = finiteCoverageNumber(coverage.data?.recommendationEligibleSkills);
+  const overallRatio = finiteCoverageNumber(coverage.data?.overall?.ratio);
+  const error = release.error || coverage.error;
+  return <div className="container">
+    <div className="page-head"><div className="eyebrow">THỐNG KÊ LIVE</div><h1>Thống kê SkillGraph</h1><p>Coverage chỉ tính mapping thỏa cả điều kiện recommendation eligibility của resource và approval của mapping.</p></div>
+    {(release.loading || coverage.loading) && <p role="status">Đang tải thống kê từ Backend…</p>}
+    {error && <div className="warning" role="alert">{error}</div>}
+    {release.data && <div className="stat-summary"><div><strong>{finiteCoverageNumber(release.data.careers).toLocaleString('vi-VN')}</strong><span>Nghề nghiệp</span></div><div><strong>{finiteCoverageNumber(release.data.skills).toLocaleString('vi-VN')}</strong><span>Kỹ năng</span></div><div><strong>{finiteCoverageNumber(release.data.courses).toLocaleString('vi-VN')}</strong><span>Học liệu</span></div><div><strong>{finiteCoverageNumber(release.data.requiresSkillRelations).toLocaleString('vi-VN')}</strong><span>Career–Skill relations</span></div></div>}
+    {coverage.data && <><div className="stat-summary"><div><strong>{essentialCovered}/{essentialTotal}</strong><span>Essential được bao phủ</span></div><div><strong>{optionalCovered}/{optionalTotal}</strong><span>Optional được bao phủ</span></div><div><strong>{recommendationEligibleSkills.toLocaleString('vi-VN')}</strong><span>Kỹ năng có học liệu đủ điều kiện</span></div><div><strong>{(overallRatio * 100).toFixed(1)}%</strong><span>Coverage tổng</span></div></div>
+      <section className="chart-card"><h3>Coverage Essential theo nghề</h3><ResponsiveContainer width="100%" height={Math.max(320, rows.length * 34)}><BarChart data={rows.map((item) => ({ career: item.career, covered: item.essential.covered, missing: item.essential.missing }))} layout="vertical" margin={{ left: 140, right: 20 }}><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis type="category" dataKey="career" width={130} fontSize={10} /><Tooltip /><Legend /><Bar dataKey="covered" name="Có học liệu đạt cổng" stackId="essential" fill="#4f46e5" /><Bar dataKey="missing" name="Chưa có học liệu đạt cổng" stackId="essential" fill="#f59e0b" /></BarChart></ResponsiveContainer></section>
+      <p className="notice">{coverage.data.policy}</p>
+    </>}
+  </div>;
+}

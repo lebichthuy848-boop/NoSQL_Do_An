@@ -1,12 +1,14 @@
-# Audit Frontend SkillGraph v3.66
+# Integration audit — SkillGraph Node.js + React
 
-Frontend, Admin API và gói database đã được đồng bộ về release v3.66.
+Frontend base: GitHub commit 68ef12b8ae58d6d43b46195e6cefae6c4be3ec12.
+Backend source: Node.js in backend/; runtime database is the operational Batch 2 ArangoDB endpoint configured locally. No credential file is included in this copy.
 
-- Catalog công khai được sinh trực tiếp từ `database/arangodb-dump` của release hiện tại.
-- Core counts: 12 careers, 420 skills, 149 skill groups, 510 courses, 183 providers.
-- Edges: 932 `requires_skill`, 678 `teaches`, 510 `offered_by`, 6 `skill_prerequisite`.
-- Validator kiểm tra counts, endpoint mồ côi, coverage và loại trừ collection xác thực khỏi catalog trình duyệt.
-- `auth_users`, `auth_sessions`, `auth_password_resets` chỉ được backend truy cập.
-- Admin CRUD đọc và ghi trực tiếp database `skill_graph_v366_acceptance`.
-
-Full audit projection được tạo tại `/data/catalog-audit-v366.json` bằng `npm run data:generate`.
+- Catalog, taxonomy, graph and coverage routes are API-backed; JSON snapshots are not runtime fallbacks.
+- Auth and user state use Node /api/v1, HttpOnly session cookie, and server-backed profile state.
+- Admin user/resource/provider/mapping workflows use supported APIs. Core Catalog CRUD is read-only or explicitly unsupported.
+- Password recovery remains unavailable until an email adapter is configured.
+- Backup/restore remains an offline reviewed workflow.
+- Frontend build: PASS; Vitest: PASS (5 files, 12 tests).
+- Backend build: PASS (20 files checked); Node unit tests: PASS (24/24).
+- Independent Reviewer: PASS after resolving note-save, coverage DTO, and transient auth/Admin gate findings.
+- docs/VERIFICATION_RECEIPT.md records commands and limits. Operational DB and browser E2E were not verified because loopback port 39529 had no listener; no protected container/database action was taken.

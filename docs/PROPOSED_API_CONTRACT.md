@@ -1,7 +1,5 @@
-# Proposed API contract
+# API contract đang sử dụng
 
-Đây là đề xuất, chưa phải API đang chạy: `GET /api/v1/meta/release`, `/careers`, `/careers/:id`, `/careers/:id/skills`, `/skills`, `/skills/:id`, `/skills/:id/resources`, `/resources`, `/resources/:id`, `/providers`, `/graph/neighborhood`, `/statistics/coverage`.
+Tài liệu đề xuất cũ đã được thay bằng Backend Node.js API v1. Contract có thẩm quyền nằm tại [backend/docs/API_CONTRACT.md](../backend/docs/API_CONTRACT.md); mapping màn hình và các giới hạn tích hợp nằm ở [API_INTEGRATION_MAPPING.md](./API_INTEGRATION_MAPPING.md).
 
-Frontend chỉ gọi API Python qua `VITE_API_BASE_URL` khi `VITE_DATA_SOURCE=api`; không kết nối trực tiếp ArangoDB.
-
-Response nên dùng JSON UTF-8 và lỗi chuẩn `{ "error": { "code": string, "message": string } }`. Endpoint graph nhận `focusId`, `mode`, `nodeTypes`, `edgeTypes`, `limit`; server phải giữ nguyên chiều `_from → _to` và không tạo prerequisite. Client dự phòng nằm tại `src/repositories/HttpCatalogClient.ts`; local adapter vẫn là mặc định đến khi API contract được duyệt và backend hoạt động.
+Frontend gọi `/api/v1` qua proxy Vite, dùng cookie session `sg_session` và `credentials: include`. Backend trả lỗi theo `{ "error": { "code": "...", "message": "..." } }`. Core catalog chỉ đọc; Admin draft APIs chỉ thao tác `app_*`.

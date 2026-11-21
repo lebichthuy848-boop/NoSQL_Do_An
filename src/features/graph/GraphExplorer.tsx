@@ -37,6 +37,7 @@ import {
   X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { apiRequest } from "../../api/http";
 import { getCatalogRepository } from "../../repositories/catalogRepository";
 import type { GraphData } from "../../types/catalog";
 import {
@@ -82,6 +83,7 @@ const edgeLabels: Record<string, string> = {
   esco_group_broader: "Nhóm rộng hơn",
   esco_skill_broader: "Kỹ năng rộng hơn",
   esco_skill_knowledge: "Liên hệ tri thức",
+  skill_prerequisite: "Prerequisite đã phê duyệt",
 };
 const edgeColors: Record<string, string> = {
   requires_skill: "#818cf8",
@@ -91,6 +93,7 @@ const edgeColors: Record<string, string> = {
   esco_group_broader: "#c084fc",
   esco_skill_broader: "#e879f9",
   esco_skill_knowledge: "#22d3ee",
+  skill_prerequisite: "#e879f9",
 };
 const iconFor = (type: string) =>
   type === "career"
@@ -107,8 +110,8 @@ const routeFor = (id: string) =>
     ? `/careers/${id.split("/")[1]}`
     : id.startsWith("skills/")
       ? `/skills/${id.split("/")[1]}`
-      : id.startsWith("courses/")
-        ? `/resources/${id.split("/")[1]}`
+      : (id.startsWith("courses/") || id.startsWith("app_resource_drafts/"))
+        ? `/resources/${encodeURIComponent(id)}`
         : null;
 
 function KnowledgeNode({ data, selected }: NodeProps<Node<GraphNodeData>>) {
@@ -141,16 +144,10 @@ function KnowledgeNode({ data, selected }: NodeProps<Node<GraphNodeData>>) {
 }
 const nodeTypes = { knowledge: KnowledgeNode };
 
-function resolve(mode: Mode, id: string): GraphData {
-  if (mode === "career") return repo.getGraphForCareer(id);
-  if (mode === "skill") return repo.getGraphForSkill(id);
-  if (mode === "resource") return repo.getGraphForCourse(id);
-  return repo.getTaxonomyGraph(id);
-}
 function entity(id: string) {
   if (id.startsWith("careers/")) return repo.getCareerById(id);
   if (id.startsWith("skills/")) return repo.getSkillById(id);
-  if (id.startsWith("courses/")) return repo.getCourseById(id);
+  if (id.startsWith("courses/") || id.startsWith("app_resource_drafts/")) return repo.getCourseById(id);
   if (id.startsWith("providers/"))
     return repo.getProviders().find((x) => x.id === id);
   return repo.getSkillGroups().find((x) => x.id === id);
@@ -252,7 +249,7 @@ function GraphWorkspace() {
     flowApi = useReactFlow(),
     shellRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>("career"),
-    [focus, setFocus] = useState(repo.getCareers()[0].id),
+    [focus, setFocus] = useState(repo.getCareers()[0]?.id || ""),
     [query, setQuery] = useState(""),
     [selected, setSelected] = useState<Selection>(null),
     [expanded, setExpanded] = useState(new Set<string>()),
@@ -274,8 +271,12 @@ function GraphWorkspace() {
         "esco_group_broader",
         "esco_skill_broader",
         "esco_skill_knowledge",
+        "skill_prerequisite",
       ]),
     );
+  const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
+  const [graphLoading, setGraphLoading] = useState(true);
+  const [graphError, setGraphError] = useState("");
   const options = useMemo(
     () =>
       mode === "career"
@@ -289,14 +290,18 @@ function GraphWorkspace() {
           : mode === "resource"
             ? repo
                 .getCourses()
+                .filter((x) => x.id.startsWith("courses/"))
                 .map((x) => ({ id: x.id, name: x.title, type: "course" }))
             : repo.getSkillGroups().map((x) => ({
                 id: x.id,
                 name: `${x.code} · ${x.name}`,
                 type: "skillGroup",
               })),
-    [mode],
+    [mode, repo.getCareers().length, repo.getSkills().length, repo.getCourses().length, repo.getSkillGroups().length],
   );
+  useEffect(() => {
+    if (!focus && options[0]) setFocus(options[0].id);
+  }, [focus, options]);
   const matches = useMemo(
     () =>
       options
@@ -304,10 +309,20 @@ function GraphWorkspace() {
         .slice(0, 40),
     [options, query],
   );
-  const graph = useMemo(
-    () => mergeExpandedGraph(resolve(mode, focus), expanded),
-    [mode, focus, expanded],
-  );
+  useEffect(() => {
+    if (!focus) { setGraph({ nodes: [], edges: [] }); setGraphLoading(false); return; }
+    const controller = new AbortController();
+    let active = true;
+    setGraphLoading(true); setGraphError('');
+    const params = new URLSearchParams({ focusId: focus, limit: '200' });
+    params.set('edgeTypes', mode === 'career' ? 'requires_skill' : mode === 'skill' ? 'requires_skill,teaches,skill_prerequisite,esco_skill_group' : mode === 'resource' ? 'teaches,offered_by,course_entry_skill' : 'esco_skill_group,esco_group_broader,esco_skill_broader,esco_skill_knowledge');
+    apiRequest<GraphData>(`/graph/neighborhood?${params}`, { signal: controller.signal }).then((result) => {
+      if (active) setGraph(result);
+    }).catch((error) => {
+      if (active && !(error instanceof DOMException && error.name === 'AbortError')) setGraphError(error instanceof Error ? error.message : 'Không thể tải graph từ Backend.');
+    }).finally(() => { if (active) setGraphLoading(false); });
+    return () => { active = false; controller.abort(); };
+  }, [focus, mode]);
   const laid = useMemo(
     () =>
       layoutGraph(
@@ -372,70 +387,44 @@ function GraphWorkspace() {
       setEdges(laid.edges);
     }
   }, [laid, selected, setNodes, setEdges]);
-  const reset = useCallback(
-    (nextMode = mode) => {
-      const id =
-        nextMode === "career"
-          ? repo.getCareers()[0].id
-          : nextMode === "skill"
-            ? repo.getSkills()[0].id
-            : nextMode === "resource"
-              ? repo.getCourses()[0].id
-              : repo.getSkillGroups()[0].id;
-      setFocus(id);
-      setExpanded(new Set());
-      setSelected(null);
-      setQuery("");
-      setTimeout(
-        () =>
-          flowApi.fitView({ duration: reduceMotion ? 0 : 450, padding: 0.18 }),
-        30,
-      );
-    },
-    [mode, flowApi, reduceMotion],
-  );
-  const changeMode = (m: Mode) => {
-    setMode(m);
-    reset(m);
-    setRequirement("all");
-  };
-  const toggleNode = (type: string) =>
-    setNodeFilter((v) => {
-      const n = new Set(v);
-      n.has(type) ? n.delete(type) : n.add(type);
-      return n;
-    });
-  const toggleEdge = (type: string) =>
-    setEdgeFilter((v) => {
-      const n = new Set(v);
-      n.has(type) ? n.delete(type) : n.add(type);
-      return n;
-    });
-  const expandNode = (id: string) => {
-    const before = new Set(graph.nodes.map((n) => n.id));
-    const next = new Set(expanded).add(id);
-    const after = mergeExpandedGraph(resolve(mode, focus), next);
-    const added = after.nodes.filter((n) => !before.has(n.id));
-    setExpanded(next);
-    if (!added.length)
-      setNotice(
-        "Các node lân cận đã có trên canvas; quan hệ liên quan đã được highlight.",
-      );
-    else if (after.nodes.length > limit)
-      setNotice(
-        `Đã tìm thấy ${added.length} node mới. Canvas đang giới hạn ${limit} node nên nhánh vừa mở được ưu tiên và một số node khác tạm ẩn; có thể tăng giới hạn ở thanh công cụ.`,
-      );
-    else
-      setNotice(
-        `Đã thêm ${added.length} node lân cận và quan hệ thực vào Skill Graph.`,
-      );
+  const reset = useCallback((nextMode = mode) => {
+    const choices = nextMode === 'career' ? repo.getCareers() : nextMode === 'skill' ? repo.getSkills() : nextMode === 'resource' ? repo.getCourses() : repo.getSkillGroups();
+    const first = choices[0];
+    if (!first) { setFocus(''); return; }
+    setFocus(first.id); setExpanded(new Set()); setSelected(null); setQuery('');
+    setTimeout(() => flowApi.fitView({ duration: reduceMotion ? 0 : 450, padding: 0.18 }), 30);
+  }, [mode, flowApi, reduceMotion]);
+  const changeMode = (nextMode: Mode) => { setMode(nextMode); reset(nextMode); setRequirement('all'); };
+  const toggleNode = (type: string) => setNodeFilter((values) => { const next = new Set(values); next.has(type) ? next.delete(type) : next.add(type); return next; });
+  const toggleEdge = (type: string) => setEdgeFilter((values) => { const next = new Set(values); next.has(type) ? next.delete(type) : next.add(type); return next; });
+  const expandNode = async (id: string) => {
+    const params = new URLSearchParams({ focusId: id, limit: '200' });
+    params.set('edgeTypes', [...edgeFilter].join(','));
+    setGraphLoading(true); setGraphError('');
+    try {
+      const addition = await apiRequest<GraphData>(`/graph/neighborhood?${params}`);
+      const before = new Set(graph.nodes.map((node) => node.id));
+      const merged = mergeExpandedGraph(graph, [addition]);
+      const added = merged.nodes.filter((node) => !before.has(node.id));
+      setGraph(merged); setExpanded((values) => new Set(values).add(id));
+      setNotice(added.length ? `Đã tải ${added.length} node và các quan hệ từ Backend.` : 'Các node lân cận đã có trên canvas.');
+    } catch (error) { setGraphError(error instanceof Error ? error.message : 'Không thể mở rộng graph.'); }
+    finally { setGraphLoading(false); }
     setTimeout(() => setNotice(null), 6500);
   };
-  const collapseNode = (id: string) => {
-    setExpanded((v) => collapseBranch(v, id));
-    setNotice(
-      "Đã thu gọn nhánh này; các nhánh mở độc lập khác được giữ nguyên.",
-    );
+  const collapseNode = async (id: string) => {
+    const next = collapseBranch(expanded, id); setExpanded(next); setGraphLoading(true);
+    try {
+      const branches = [focus, ...next];
+      const results = await Promise.all(branches.map(async (focusId) => {
+        const params = new URLSearchParams({ focusId, limit: '200' });
+        params.set('edgeTypes', [...edgeFilter].join(','));
+        return apiRequest<GraphData>(`/graph/neighborhood?${params}`);
+      }));
+      setGraph(mergeExpandedGraph(results[0] || { nodes: [], edges: [] }, results.slice(1)));
+    } catch (error) { setGraphError(error instanceof Error ? error.message : 'Không thể thu gọn graph.'); }
+    finally { setGraphLoading(false); }
+    setNotice('Đã tải lại các nhánh graph còn mở từ Backend.');
     setTimeout(() => setNotice(null), 4500);
   };
   const selectNode = (_: unknown, node: Node) => {
@@ -685,7 +674,9 @@ function GraphWorkspace() {
             </button>
           </div>
         </div>
-        {nodes.length ? (
+{graphLoading && <div className="graph-notice" role="status">Đang tải neighborhood từ Backend…</div>}
+        {graphError && <div className="warning" role="alert">{graphError}</div>}
+                {nodes.length ? (
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -735,7 +726,7 @@ function GraphWorkspace() {
             ))}
           </div>
           <em>
-            Không hiển thị prerequisite vì release có 0 cạnh được xác minh.
+            Prerequisite chỉ xuất hiện khi Backend xác nhận cạnh và bằng chứng hợp lệ.
           </em>
         </div>
       </main>

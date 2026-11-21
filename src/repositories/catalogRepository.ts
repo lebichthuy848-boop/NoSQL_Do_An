@@ -1,30 +1,142 @@
-import payloadRaw from '../data/generated/catalog-v366.json';
-import type{Career,CatalogPayload,Course,Edge,Evidence,GraphData,Provider,Raw,Requirement,Skill,SkillGroup}from'../types/catalog';
-const p=payloadRaw as CatalogPayload,c=p.collections;
-const id=(kind:string,key:string)=>`${kind}/${key}`;
-const edge=(x:Raw):Edge=>({key:x._key,id:x._key,from:String(x._from),to:String(x._to),raw:x});
-const career=(x:Raw):Career=>({key:x._key,id:id('careers',x._key),name:String(x.name),description:String(x.description),careerGroup:String(x.career_group),iscoGroup:String(x.isco_group),escoUri:String(x.esco_uri)});
-const skill=(x:Raw):Skill=>({key:x._key,id:id('skills',x._key),name:String(x.name),description:String(x.description),skillType:String(x.skill_type),escoUri:String(x.esco_uri),reuseLevel:x.reuse_level?String(x.reuse_level):null});
-const group=(x:Raw):SkillGroup=>({key:x._key,id:id('skill_groups',x._key),name:String(x.name),description:String(x.description),code:String(x.code),escoUri:String(x.esco_uri)});
-const course=(x:Raw):Course=>({key:x._key,id:id('courses',x._key),title:String(x.title),canonicalUrl:String(x.canonical_url),providerName:String(x.provider_name),resourceType:String(x.resource_type),language:String(x.language),level:x.level?String(x.level):null,certificateAvailable:typeof x.certificate_available==='boolean'?x.certificate_available:null,verifiedOutcomeProficiency:x.verified_outcome_proficiency?String(x.verified_outcome_proficiency):null,raw:x});
-const provider=(x:Raw):Provider=>({key:x._key,id:id('providers',x._key),name:String(x.name),officialWebsite:x.official_website?String(x.official_website):null});
-export interface CatalogRepository{getReleaseInfo():CatalogPayload['release'];getCareers():Career[];getCareerById(v:string):Career|undefined;getCareerRequirements(v:string):Requirement[];getSkills():Skill[];getSkillById(v:string):Skill|undefined;getSkillGroups():SkillGroup[];getSkillsInGroup(v:string):Skill[];getCourses():Course[];getCourseById(v:string):Course|undefined;getProviders():Provider[];getCoursesByProvider(v:string):Course[];getCoursesForSkill(v:string):Array<{course:Course;evidence:Evidence[]}>;getCareersForSkill(v:string):Array<{career:Career;type:string}>;getSkillsForCourse(v:string):Array<{skill:Skill;evidence:Evidence[]}>;getCoverageReport():Array<{career:string;essential:number;covered:number;missing:number;pct:number}>;getRemainingEssentialGaps():string[][];getGraphForCareer(v:string):GraphData;getGraphForSkill(v:string):GraphData;getGraphForCourse(v:string):GraphData;getTaxonomyGraph(v:string):GraphData;getRaw():CatalogPayload}
-class LocalCatalogRepository implements CatalogRepository{
- private careers=c.careers.map(career);private skills=c.skills.map(skill);private groups=c.skill_groups.map(group);private courses=c.courses.map(course);private providers=c.providers.map(provider);
- private cm=new Map(this.careers.map(x=>[x.id,x]));private sm=new Map(this.skills.map(x=>[x.id,x]));private rm=new Map(this.courses.map(x=>[x.id,x]));private teaches=c.teaches.map(edge);
- getReleaseInfo(){return p.release}getRaw(){return p}getCareers(){return this.careers}getCareerById(v:string){return this.cm.get(v.includes('/')?v:id('careers',v))}getSkills(){return this.skills}getSkillById(v:string){return this.sm.get(v.includes('/')?v:id('skills',v))}getSkillGroups(){return this.groups}getCourses(){return this.courses}getCourseById(v:string){return this.rm.get(v.includes('/')?v:id('courses',v))}getProviders(){return this.providers}
- getCareerRequirements(v:string){const cid=v.includes('/')?v:id('careers',v);return c.requires_skill.filter(x=>x._from===cid).map(x=>{const e=edge(x),s=this.sm.get(e.to)!;return{...e,requirementType:String(x.requirement_type)as'essential'|'optional',requiredLevel:null,skill:s,resourceCount:new Set(this.teaches.filter(t=>t.to===s.id).map(t=>t.from)).size}})}
- getSkillsInGroup(v:string){const gid=v.includes('/')?v:id('skill_groups',v);return c.esco_skill_group.filter(x=>x._to===gid).map(x=>this.sm.get(String(x._from))!).filter(Boolean)}
- getCoursesByProvider(v:string){const pid=v.includes('/')?v:id('providers',v);const ids=new Set(c.offered_by.filter(x=>x._to===pid).map(x=>String(x._from)));return this.courses.filter(x=>ids.has(x.id))}
- getCoursesForSkill(v:string){const sid=v.includes('/')?v:id('skills',v),g=new Map<string,Edge[]>();for(const x of this.teaches.filter(x=>x.to===sid))g.set(x.from,[...(g.get(x.from)||[]),x]);return[...g].map(([rid,es])=>({course:this.rm.get(rid)!,evidence:es.map(e=>({edge:e,evidenceScope:String(e.raw.evidence_scope)as'direct_topic'|'partial',evidenceLimit:e.raw.mapping_audit_limit?String(e.raw.mapping_audit_limit):null}))}))}
- getSkillsForCourse(v:string){const rid=v.includes('/')?v:id('courses',v),g=new Map<string,Edge[]>();for(const x of this.teaches.filter(x=>x.from===rid))g.set(x.to,[...(g.get(x.to)||[]),x]);return[...g].map(([sid,es])=>({skill:this.sm.get(sid)!,evidence:es.map(e=>({edge:e,evidenceScope:String(e.raw.evidence_scope)as'direct_topic'|'partial',evidenceLimit:e.raw.mapping_audit_limit?String(e.raw.mapping_audit_limit):null}))}))}
- getCareersForSkill(v:string){const sid=v.includes('/')?v:id('skills',v);return c.requires_skill.filter(x=>x._to===sid).map(x=>({career:this.cm.get(String(x._from))!,type:String(x.requirement_type)}))}
- getCoverageReport(){return p.reports.coverage.trim().split(/\r?\n/).slice(1).map(r=>{const x=r.split(',');return{career:x[0],essential:+x[1],covered:+x[2],missing:+x[3],pct:+x[4]}})}
- getRemainingEssentialGaps(){return p.reports.gaps.trim().split(/\r?\n/).slice(1).map(x=>x.split(','))}
- getGraphForCareer(v:string){const car=this.getCareerById(v);if(!car)return{nodes:[],edges:[]};const req=this.getCareerRequirements(car.id);return{nodes:[{id:car.id,type:'career',label:car.name},...req.map(x=>({id:x.skill.id,type:'skill',label:x.skill.name}))],edges:req.map(x=>({id:x.id,source:car.id,target:x.skill.id,type:'requires_skill',data:x.raw}))}}
- getGraphForSkill(v:string){const s=this.getSkillById(v);if(!s)return{nodes:[],edges:[]};const careers=this.getCareersForSkill(s.id),resources=this.getCoursesForSkill(s.id);return{nodes:[{id:s.id,type:'skill',label:s.name},...careers.map(x=>({id:x.career.id,type:'career',label:x.career.name})),...resources.map(x=>({id:x.course.id,type:'course',label:x.course.title}))],edges:[...careers.map((x,i)=>({id:`req-${i}-${s.key}`,source:x.career.id,target:s.id,type:'requires_skill'})),...resources.map((x,i)=>({id:`teach-${i}-${s.key}`,source:x.course.id,target:s.id,type:'teaches',data:x.evidence}))]}}
- getGraphForCourse(v:string){const r=this.getCourseById(v);if(!r)return{nodes:[],edges:[]};const skills=this.getSkillsForCourse(r.id),off=c.offered_by.find(x=>x._from===r.id),prov=off?this.providers.find(x=>x.id===off._to):undefined;return{nodes:[{id:r.id,type:'course',label:r.title},...skills.map(x=>({id:x.skill.id,type:'skill',label:x.skill.name})),...(prov?[{id:prov.id,type:'provider',label:prov.name}]:[])],edges:[...skills.map((x,i)=>({id:`teach-${i}-${r.key}`,source:r.id,target:x.skill.id,type:'teaches',data:x.evidence})),...(prov?[{id:`off-${r.key}`,source:r.id,target:prov.id,type:'offered_by'}]:[])]}}
- getTaxonomyGraph(v:string){const gid=v.includes('/')?v:id('skill_groups',v),g=this.groups.find(x=>x.id===gid);if(!g)return{nodes:[],edges:[]};const membership=c.esco_skill_group.filter(x=>x._to===gid).slice(0,60),broader=c.esco_group_broader.filter(x=>x._from===gid||x._to===gid),groupIds=new Set(broader.flatMap(x=>[String(x._from),String(x._to)]));const relatedGroups=this.groups.filter(x=>groupIds.has(x.id));return{nodes:[{id:g.id,type:'skillGroup',label:g.name},...membership.map(x=>{const s=this.sm.get(String(x._from))!;return{id:s.id,type:'skill',label:s.name}}),...relatedGroups.filter(x=>x.id!==g.id).map(x=>({id:x.id,type:'skillGroup',label:x.name}))],edges:[...membership.map(x=>({id:String(x._key),source:String(x._from),target:String(x._to),type:'esco_skill_group',data:x})),...broader.map(x=>({id:String(x._key),source:String(x._from),target:String(x._to),type:'esco_group_broader',data:x}))]}}
+import { apiRequest, apiRequestWithResponse } from '../api/http';
+import type { Career, CatalogPayload, Course, Provider, Requirement, Skill, SkillGroup } from '../types/catalog';
+
+const PAGE_SIZE = 100;
+const keyOf = (value: string, collection: string) => value.includes('/') ? value.split('/').slice(-1)[0]! : value;
+
+async function getAllPages<T>(path: string): Promise<T[]> {
+  const first = await apiRequestWithResponse<T[]>(`${path}?page=1&pageSize=${PAGE_SIZE}`);
+  const items = [...(Array.isArray(first.data) ? first.data : [])];
+  const total = Number(first.headers.get('X-Total-Count') || items.length);
+  const pages = Math.ceil(total / PAGE_SIZE);
+  for (let start = 2; start <= pages; start += 5) {
+    const batch = Array.from({ length: Math.min(5, pages - start + 1) }, (_, i) => start + i);
+    const results = await Promise.all(batch.map((page) => apiRequest<T[]>(`${path}?page=${page}&pageSize=${PAGE_SIZE}`)));
+    results.forEach((rows) => items.push(...(Array.isArray(rows) ? rows : [])));
+  }
+  return items;
 }
-class HttpCatalogRepository implements CatalogRepository{private no():never{throw new Error('API mode chưa có backend production')}getReleaseInfo(){return this.no()}getCareers(){return this.no()}getCareerById(_v:string){return this.no()}getCareerRequirements(_v:string){return this.no()}getSkills(){return this.no()}getSkillById(_v:string){return this.no()}getSkillGroups(){return this.no()}getSkillsInGroup(_v:string){return this.no()}getCourses(){return this.no()}getCourseById(_v:string){return this.no()}getProviders(){return this.no()}getCoursesByProvider(_v:string){return this.no()}getCoursesForSkill(_v:string){return this.no()}getCareersForSkill(_v:string){return this.no()}getSkillsForCourse(_v:string){return this.no()}getCoverageReport(){return this.no()}getRemainingEssentialGaps(){return this.no()}getGraphForCareer(_v:string){return this.no()}getGraphForSkill(_v:string){return this.no()}getGraphForCourse(_v:string){return this.no()}getTaxonomyGraph(_v:string){return this.no()}getRaw(){return this.no()}}
-let repo:CatalogRepository;export const getCatalogRepository=()=>repo||(repo=import.meta.env.VITE_DATA_SOURCE==='api'?new HttpCatalogRepository():new LocalCatalogRepository());
+
+function normalizeCareer(row: any): Career {
+  return { key: String(row.key), id: String(row.id || `careers/${row.key}`), name: String(row.name || ''), description: String(row.description || ''), careerGroup: String(row.careerGroup || ''), iscoGroup: String(row.iscoGroup || ''), escoUri: String(row.escoUri || '') };
+}
+function normalizeSkill(row: any): Skill {
+  return { key: String(row.key), id: String(row.id || `skills/${row.key}`), name: String(row.name || ''), description: String(row.description || ''), skillType: String(row.skillType || ''), escoUri: String(row.escoUri || ''), reuseLevel: row.reuseLevel == null ? null : String(row.reuseLevel) };
+}
+function normalizeGroup(row: any): SkillGroup {
+  return { key: String(row.key), id: String(row.id || `skill_groups/${row.key}`), name: String(row.name || ''), description: String(row.description || ''), code: String(row.code || ''), escoUri: String(row.escoUri || '') };
+}
+function normalizeResource(row: any): Course {
+  return { key: String(row.key), id: String(row.id || `courses/${row.key}`), title: String(row.title || ''), canonicalUrl: String(row.canonicalUrl || ''), providerName: String(row.providerName || ''), resourceType: String(row.resourceType || ''), language: String(row.language || ''), level: row.level == null ? null : String(row.level), certificateAvailable: typeof row.certificateAvailable === 'boolean' ? row.certificateAvailable : null, verifiedOutcomeProficiency: null, raw: row };
+}
+function normalizeProvider(row: any): Provider {
+  return { key: String(row.key), id: String(row.id || `providers/${row.key}`), name: String(row.name || ''), officialWebsite: row.officialWebsite == null ? null : String(row.officialWebsite), resourceCount: Number(row.resourceCount || 0) };
+}
+
+export interface CatalogRepository {
+  readonly status: 'idle' | 'loading' | 'ready' | 'error';
+  readonly error: string | null;
+  subscribe(listener: () => void): () => void;
+  load(): Promise<void>;
+  retry(): Promise<void>;
+  getReleaseInfo(): CatalogPayload['release'];
+  getCareers(): Career[];
+  getCareerById(value: string): Career | undefined;
+  getCareerRequirements(value: string): Requirement[];
+  getSkills(): Skill[];
+  getSkillById(value: string): Skill | undefined;
+  getSkillGroups(): SkillGroup[];
+  getSkillsInGroup(value: string): Skill[];
+  getCourses(): Course[];
+  getCourseById(value: string): Course | undefined;
+  getProviders(): Provider[];
+  getCoursesByProvider(value: string): Course[];
+  getCoursesForSkill(value: string): Array<{ course: Course; evidence: any[] }>;
+  getCareersForSkill(value: string): Array<{ career: Career; type: string }>;
+  getSkillsForCourse(value: string): Array<{ skill: Skill; evidence: any[] }>;
+  getCoverageReport(): Array<{ career: string; essential: number; covered: number; missing: number; pct: number }>;
+  getRaw(): CatalogPayload;
+}
+
+export class ApiCatalogRepository implements CatalogRepository {
+  status: CatalogRepository['status'] = 'idle';
+  error: string | null = null;
+  private listeners = new Set<() => void>();
+  private loading: Promise<void> | null = null;
+  private careers: Career[] = [];
+  private skills: Skill[] = [];
+  private groups: SkillGroup[] = [];
+  private courses: Course[] = [];
+  private providers: Provider[] = [];
+  private requirements = new Map<string, Requirement[]>();
+  private release: any = { release: {}, careers: 0, skills: 0, courses: 0 };
+  private coverage: any = { perCareer: [] };
+
+  subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  private notify() { this.listeners.forEach((listener) => listener()); }
+  async retry() { this.loading = null; this.status = 'idle'; this.error = null; await this.load(); }
+  async load() {
+    if (this.status === 'ready') return;
+    if (this.loading) return this.loading;
+    this.status = 'loading'; this.error = null; this.notify();
+    this.loading = (async () => {
+      try {
+        const [careerRows, skillRows, groupRows, resourceRows, providerRows, release, coverage] = await Promise.all([
+          getAllPages<any>('/careers'), getAllPages<any>('/skills'), getAllPages<any>('/skill-groups'), getAllPages<any>('/resources'), getAllPages<any>('/providers'),
+          apiRequest<any>('/meta/release'), apiRequest<any>('/statistics/coverage'),
+        ]);
+        this.careers = careerRows.map(normalizeCareer);
+        this.skills = skillRows.map(normalizeSkill);
+        this.groups = groupRows.map(normalizeGroup);
+        this.courses = resourceRows.map(normalizeResource);
+        this.providers = providerRows.map(normalizeProvider);
+        this.release = release;
+        this.coverage = coverage;
+        for (let start = 0; start < this.careers.length; start += 4) {
+          const batch = this.careers.slice(start, start + 4);
+          const results = await Promise.all(batch.map(async (career) => {
+            const rows = await apiRequest<any[]>(`/careers/${encodeURIComponent(career.key)}/skills`);
+            return [career.id, rows.map((row) => ({
+              key: row.key, id: row.id, from: row.from, to: row.to, raw: row.raw || {},
+              requirementType: row.requirementType === 'optional' ? 'optional' : 'essential', requiredLevel: null,
+              skill: normalizeSkill(row.skill), resourceCount: Number(row.resourceCount || 0),
+            } as Requirement))] as const;
+          }));
+          results.forEach(([id, rows]) => this.requirements.set(id, rows));
+        }
+        this.status = 'ready';
+      } catch (error) {
+        this.status = 'error';
+        this.error = error instanceof Error ? error.message : 'Không tải được catalog từ Backend.';
+      } finally {
+        this.loading = null;
+        this.notify();
+      }
+    })();
+    return this.loading;
+  }
+  getReleaseInfo() { return this.release.release || {}; }
+  getCareers() { return this.careers; }
+  getCareerById(value: string) { const id = value.includes('/') ? value : `careers/${value}`; return this.careers.find((row) => row.id === id || row.key === keyOf(value, 'careers')); }
+  getCareerRequirements(value: string) { const id = value.includes('/') ? value : `careers/${value}`; return this.requirements.get(id) || []; }
+  getSkills() { return this.skills; }
+  getSkillById(value: string) { const id = value.includes('/') ? value : `skills/${value}`; return this.skills.find((row) => row.id === id || row.key === keyOf(value, 'skills')); }
+  getSkillGroups() { return this.groups; }
+  getSkillsInGroup(_value: string) { return []; }
+  getCourses() { return this.courses; }
+  getCourseById(value: string) { const id = value.includes('/') ? value : `courses/${value}`; return this.courses.find((row) => row.id === id || row.key === keyOf(value, 'courses')); }
+  getProviders() { return this.providers; }
+  getCoursesByProvider(value: string) { const provider = this.providers.find((row) => row.id === value || row.key === keyOf(value, 'providers')); return this.courses.filter((row) => row.providerName.toLowerCase() === provider?.name.toLowerCase()); }
+  getCoursesForSkill(_value: string) { return []; }
+  getCareersForSkill(_value: string) { return []; }
+  getSkillsForCourse(_value: string) { return []; }
+  getCoverageReport() {
+    return (this.coverage.perCareer || []).map((row: any) => ({ career: row.career, essential: row.essential.total, covered: row.essential.covered, missing: row.essential.total - row.essential.covered, pct: row.essential.ratio * 100 }));
+  }
+  getRaw(): CatalogPayload {
+    return { release: this.release.release || {}, handoff: {}, manifest: { records: this.release.records }, collections: {}, reports: { coverage: '', gaps: '', legacyAudit: '' } } as CatalogPayload;
+  }
+}
+
+let repository: ApiCatalogRepository | null = null;
+export const getCatalogRepository = (): CatalogRepository => repository || (repository = new ApiCatalogRepository());

@@ -1,55 +1,74 @@
-# SkillGraph — Career & Learning Explorer
+# SkillGraph — bản tích hợp
 
-Frontend React 19 + TypeScript, backend Python và ArangoDB cho dữ liệu **Skill Graph v3.66**.
+Bản này chạy Frontend React + TypeScript với Backend Node.js, đọc Skill Graph v3.66 Coverage 50% Batch 2 từ ArangoDB 3.12.11. Backend Python trong `server/auth/` và workflow cũ trong `database/` chỉ được giữ lại ở trạng thái legacy; chúng không phải runtime của ứng dụng tích hợp.
 
-## Chạy đầy đủ bằng database dùng chung
+## Yêu cầu
 
-Yêu cầu: Node.js, Python 3.10+ và Docker Desktop.
+- Windows PowerShell, Node.js 22+, npm và Docker Desktop.
+- Backup Batch 2 và thông tin cần thiết để cấp quyền DB phải được cung cấp riêng. GitHub không phải nơi lấy backup hay credential.
+- Không dùng database vận hành hoặc đã nghiệm thu để dựng bản demo. Tạo một ArangoDB test mới với volume riêng theo [runbook dựng máy mới](docs/INTEGRATION_RUNBOOK.md).
 
-```powershell
-PowerShell -ExecutionPolicy Bypass -File .\database\restore.ps1
-Copy-Item .\server\auth\.env.example .\server\auth\.env
-npm install
-```
+## Clone và chạy
 
-Sau đó chạy `npm run auth:dev` và `npm run dev` ở hai terminal riêng. Mở `http://localhost:5174`.
+~~~powershell
+git clone --branch integration/skillgraph-stagec-20261121 --single-branch https://github.com/lebichthuy848-boop/NoSQL_Do_An.git
+Set-Location .\NoSQL_Do_An
+npm ci
+~~~
 
-Tài khoản Website Admin dùng để test: `admin` / `123456`.
+Làm theo runbook để xác minh backup, tạo DB test mới, tạo runtime user có quyền giới hạn và cấu hình `backend/.env`. Không chạy `database/restore.ps1` cũ.
 
-Chi tiết database và các tài khoản local nằm tại [database/README.md](database/README.md).
+Khởi động Backend trong terminal thứ nhất:
 
-## Chạy frontend
+~~~powershell
+Set-Location .\backend
+npm start
+~~~
 
-```bash
-npm install
-npm run data:generate
-npm run dev
-```
+Kiểm tra API health và số liệu release:
 
-Build và kiểm thử:
+~~~powershell
+Invoke-RestMethod http://127.0.0.1:39530/api/v1/health | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:39530/api/v1/meta/release | ConvertTo-Json -Depth 5
+~~~
 
-```bash
-npm run data:validate
+Khởi động Frontend từ terminal thứ hai tại thư mục gốc:
+
+~~~powershell
+npm run dev -- --host 127.0.0.1 --port 5174
+~~~
+
+Mở `http://127.0.0.1:5174`. Tạo Admin ban đầu và User demo an toàn theo runbook; không dùng mật khẩu mẫu dùng chung.
+
+## Tài nguyên và thông tin nhạy cảm
+
+GitHub chứa source, `package-lock.json`, tests, scripts và hướng dẫn. Backup Batch 2, Docker volumes, `.env`, `.secrets`, mật khẩu DB và mật khẩu tài khoản cục bộ phải được cung cấp hoặc tạo riêng trên từng máy; không đưa chúng vào commit.
+
+Branch này loại bản dump legacy khỏi working tree ở HEAD và thay các giá trị mẫu cũ bằng placeholder. Các commit tổ tiên trên GitHub vẫn giữ artifact/credential legacy trước đó; xem mục bảo mật trong runbook và xử lý rotation riêng. Branch này không xóa hoặc viết lại lịch sử GitHub.
+
+## Kiểm thử
+
+~~~powershell
 npm test
 npm run build
-```
+npm test --prefix backend
+npm run build --prefix backend
+~~~
 
-## Nguồn dữ liệu
+Không chạy Backend integration suite hoặc thao tác đăng ký/Admin trên database chính thức hay đã nghiệm thu. Chỉ chạy mutation test trên DB test riêng.
 
-`scripts/generate-catalog.mjs` đọc logical dump v3.66 trong `database/arangodb-dump`, tạo projection cho các trang công khai tại `src/data/generated/catalog-v366.json` và metadata audit tại `public/data/catalog-audit-v366.json`.
+## Giới hạn đã biết
 
-Admin và Auth làm việc với ArangoDB thông qua Python API. Các trang công khai dùng catalog v3.66 được sinh từ cùng logical dump để có dữ liệu ngay khi frontend khởi động.
+- Quên mật khẩu chưa gửi email và trả `EMAIL_DELIVERY_NOT_CONFIGURED`.
+- Catalog nghề, kỹ năng và các edge lõi chỉ đọc; Admin CRUD hiện tập trung vào User và các draft trong `app_*`.
+- Lượt Admin Browser E2E đầy đủ chưa được chạy lại sau sửa cuối; một số thao tác hồ sơ/Admin chưa có bằng chứng E2E hoàn chỉnh.
+- Chưa dựng lại trên máy sạch trong lượt bàn giao này; kết quả build/test hiện có không thay thế kiểm chứng đó.
 
-## Phân biệt dữ liệu
+## Tài liệu
 
-- Catalog, taxonomy, graph, coverage và data quality dùng dữ liệu v3.66.
-- Career Goal, My Skills, Skill Gap, Learning Path và My Learning là **MÔ PHỎNG**, lưu localStorage.
-- `direct_topic` chỉ là liên quan chủ đề; không chứng minh thành thạo hay khuyến nghị được phê duyệt.
-- Release có 6 quan hệ `skill_prerequisite`; thuật toán cá nhân hóa vẫn là mô phỏng phía trình duyệt.
-- Validator kiểm tra catalog v3.66 được sinh từ logical dump của database live.
-
-Xem thêm [Data version](docs/DATA_VERSION.md) và [API contract đề xuất](docs/PROPOSED_API_CONTRACT.md).
-
-## Đăng ký, đăng nhập, quên mật khẩu
-
-Đã bổ sung module frontend trong src/features/auth và backend Python trong server/auth. Xem hướng dẫn cấu hình ArangoDB, SMTP và cách chạy tại server/auth/README.md. Backend không tự tạo collection/index. Chạy npm run auth:dev ở terminal riêng trước khi dùng các trang xác thực.
+- [Runbook clone, restore DB test, bootstrap quyền và chạy website](docs/INTEGRATION_RUNBOOK.md)
+- [Mapping Frontend–Backend](docs/API_INTEGRATION_MAPPING.md)
+- [API contract](backend/docs/API_CONTRACT.md)
+- [Stage B verification receipt](docs/E2E_STAGE_B_VERIFICATION_RECEIPT_2026-11-21.md)
+- [Stage C final verification](docs/STAGE_C_FINAL_VERIFICATION.md)
+- [NoSQL assessment](docs/NOSQL_RUBRIC_ASSESSMENT.md)

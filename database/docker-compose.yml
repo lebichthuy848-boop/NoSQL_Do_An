@@ -1,15 +1,12 @@
+# Isolated member test database only. Always pass a unique Compose project name.
 services:
   arangodb:
     image: arangodb:3.12.11
-    container_name: skillgraph-team-db
     environment:
-      ARANGO_ROOT_PASSWORD: skillgraph-root-123456
+      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD:?Set it in the ignored secret env file}
     ports:
-      - "127.0.0.1:8530:8529"
+      - "127.0.0.1:${ARANGO_TEST_PORT:?Set a loopback port in the ignored secret env file}:8529"
     volumes:
-      - skillgraph-team-data:/var/lib/arangodb3
-      - ./arangodb-dump:/dump:ro
-    restart: unless-stopped
-
+      - arangodb-data:/var/lib/arangodb3
 volumes:
-  skillgraph-team-data:
+  arangodb-data:

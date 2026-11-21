@@ -1,0 +1,260 @@
+/*
+  Read-only ArangoDB Web Interface demo queries for the verified v3.66 Batch 2 database.
+  Select database: skill_graph_v366_acceptance
+  No query in this file writes or removes data.
+
+  Bind values for queries that use parameters are listed in BACKEND_RUNBOOK.md.
+*/
+
+/* 1. Basic catalog query: the 12 official careers. */
+FOR career IN careers
+  SORT LOWER(career.name)
+  RETURN {
+    id: career._id,
+    name: career.name,
+    careerGroup: career.career_group,
+    iscoGroup: career.isco_group
+  }
+
+/* 2. Advanced traversal: requirements and related skills for one career.
+   Bind parameter: { "careerId": "careers/<existing-key>" } */
+FOR requirement IN requires_skill
+  FILTER requirement._from == @careerId
+  LET skill = DOCUMENT(requirement._to)
+  FILTER skill != null
+  SORT requirement.requirement_type, LOWER(skill.name)
+  RETURN {
+    careerId: requirement._from,
+    skillId: skill._id,
+    skillName: skill.name,
+    requirementType: requirement.requirement_type
+  }
+
+/* 3. Coverage by career using the official two-gate recommendation rule. */
+FOR career IN careers
+  LET essential = (
+    FOR requirement IN requires_skill
+      FILTER requirement._from == career._id
+        AND requirement.requirement_type == "essential"
+      RETURN requirement._to
+  )
+  LET covered = (
+    FOR skillId IN essential
+      FILTER LENGTH((
+        FOR mapping IN teaches
+          FILTER mapping._to == skillId
+            AND mapping.auto_recommendation_allowed == true
+          LET course = DOCUMENT(mapping._from)
+          FILTER course != null AND course.recommendation_eligible == true
+          RETURN 1
+      )) > 0
+      RETURN skillId
+  )
+  SORT LOWER(career.name)
+  RETURN {
+    careerId: career._id,
+    careerName: career.name,
+    essentialTotal: LENGTH(essential),
+    essentialCovered: LENGTH(covered),
+    essentialMissing: LENGTH(essential) - LENGTH(covered),
+    essentialCoverage: LENGTH(essential) == 0 ? 0 : LENGTH(covered) / LENGTH(essential)
+  }
+
+/* 4. Binary-presence Career Fit for an explicitly supplied skill list.
+   Bind parameter: { "skillIds": ["skills/<existing-key>"] }
+   This is not a proficiency score. */
+LET owned = UNIQUE(@skillIds)
+FOR career IN careers
+  LET essential = (
+    FOR requirement IN requires_skill
+      FILTER requirement._from == career._id
+        AND requirement.requirement_type == "essential"
+      RETURN requirement._to
+  )
+  LET optional = (
+    FOR requirement IN requires_skill
+      FILTER requirement._from == career._id
+        AND requirement.requirement_type == "optional"
+      RETURN requirement._to
+  )
+  LET essentialPresent = LENGTH((FOR skillId IN essential FILTER skillId IN owned RETURN 1))
+  LET optionalPresent = LENGTH((FOR skillId IN optional FILTER skillId IN owned RETURN 1))
+  LET essentialRatio = LENGTH(essential) == 0 ? 0 : essentialPresent / LENGTH(essential)
+  LET optionalRatio = LENGTH(optional) == 0 ? 0 : optionalPresent / LENGTH(optional)
+  SORT 0.8 * essentialRatio + 0.2 * optionalRatio DESC, LOWER(career.name)
+  RETURN {
+    careerId: career._id,
+    careerName: career.name,
+    essentialPresenceRatio: essentialRatio,
+    optionalPresenceRatio: optionalRatio,
+    careerFit: 0.8 * essentialRatio + 0.2 * optionalRatio
+  }
+
+/* 5. Recommendation candidates for one skill; both gates must be exactly true.
+   Bind parameter: { "skillId": "skills/<existing-key>" } */
+FOR mapping IN teaches
+  FILTER mapping._to == @skillId
+    AND mapping.auto_recommendation_allowed == true
+  LET course = DOCUMENT(mapping._from)
+  FILTER course != null AND course.recommendation_eligible == true
+  LET providerEdge = FIRST(FOR edge IN offered_by FILTER edge._from == course._id RETURN edge)
+  LET provider = providerEdge == null ? null : DOCUMENT(providerEdge._to)
+  RETURN {
+    resourceId: course._id,
+    title: course.title,
+    provider: provider == null ? null : provider.name,
+    url: course.canonical_url,
+    resourceType: course.resource_type,
+    skillId: mapping._to,
+    evidenceScope: mapping.evidence_scope,
+    evidenceUrl: mapping.evidence_url
+  }
+
+/* 6. Approved skill prerequisite edges for a dependent skill.
+   Direction is dependent (_from) -> foundation (_to).
+   Bind parameter: { "dependentSkillId": "skills/<existing-key>" } */
+FOR edge IN skill_prerequisite
+  FILTER edge._from == @dependentSkillId
+    AND edge.approved_for_learning_path == true
+  LET foundation = DOCUMENT(edge._to)
+  FILTER foundation != null
+  RETURN {
+    dependentSkillId: edge._from,
+    foundationSkillId: edge._to,
+    foundationSkillName: foundation.name,
+    sourceUrl: edge.source_url
+  }
+
+/* 7. Basic catalog query: list the official skills. */
+FOR skill IN skills
+  SORT LOWER(skill.name)
+  RETURN {
+    id: skill._id,
+    name: skill.name,
+    skillType: skill.skill_type,
+    reuseLevel: skill.reuse_level
+  }
+
+/* 8. Search/filter skills by name and optional skill type.
+   Bind parameters: { "search": "data", "skillType": "" } */
+FOR skill IN skills
+  FILTER @search == "" OR CONTAINS(LOWER(skill.name), LOWER(@search))
+  FILTER @skillType == "" OR skill.skill_type == @skillType
+  SORT LOWER(skill.name)
+  LIMIT 100
+  RETURN { id: skill._id, name: skill.name, skillType: skill.skill_type }
+
+/* 9. Binary-presence Skill Gap for a selected career.
+   Bind parameters: { "careerId": "careers/<existing-key>", "skillIds": ["skills/<existing-key>"] }
+   Use [] when the user has not declared any skills. */
+LET career = DOCUMENT(@careerId)
+FILTER career != null
+LET requirements = (
+  FOR requirement IN requires_skill
+    FILTER requirement._from == career._id
+    LET skill = DOCUMENT(requirement._to)
+    FILTER skill != null
+    RETURN {
+      skillId: skill._id,
+      skillName: skill.name,
+      requirementType: requirement.requirement_type,
+      present: requirement._to IN @skillIds
+    }
+)
+RETURN {
+  careerId: career._id,
+  careerName: career.name,
+  totalRequired: LENGTH(requirements),
+  presentCount: LENGTH((FOR item IN requirements FILTER item.present RETURN 1)),
+  missingCount: LENGTH((FOR item IN requirements FILTER !item.present RETURN 1)),
+  requiredSkills: requirements,
+  missingSkills: (FOR item IN requirements FILTER !item.present RETURN item)
+}
+
+/* 10. Learning-path prerequisite chain for one dependent skill.
+   Bind parameter: { "dependentSkillId": "skills/<existing-key>" }
+   Approved edges point dependent skill -> foundation skill. */
+FOR vertex, edge, path IN 0..3 OUTBOUND @dependentSkillId skill_prerequisite
+  FILTER LENGTH(path.edges) == 0
+    OR LENGTH((FOR pathEdge IN path.edges FILTER pathEdge.approved_for_learning_path != true RETURN 1)) == 0
+  SORT LENGTH(path.edges) DESC, LOWER(vertex.name)
+  RETURN {
+    skillId: vertex._id,
+    skillName: vertex.name,
+    depth: LENGTH(path.edges),
+    relation: LENGTH(path.edges) == 0 ? "target" : "foundation",
+    prerequisiteEdges: path.edges[*]._id
+  }
+
+/* 11. Overall, Essential, and Optional coverage using both recommendation gates. */
+FOR career IN careers
+  LET requirements = (
+    FOR requirement IN requires_skill
+      FILTER requirement._from == career._id
+      LET eligible = LENGTH((
+        FOR mapping IN teaches
+          FILTER mapping._to == requirement._to
+            AND mapping.auto_recommendation_allowed == true
+          LET course = DOCUMENT(mapping._from)
+          FILTER course != null AND course.recommendation_eligible == true
+          RETURN 1
+      )) > 0
+      RETURN { requirementType: requirement.requirement_type, eligible }
+  )
+  LET essential = (FOR item IN requirements FILTER item.requirementType == "essential" RETURN item)
+  LET optional = (FOR item IN requirements FILTER item.requirementType == "optional" RETURN item)
+  LET overallCovered = LENGTH((FOR item IN requirements FILTER item.eligible RETURN 1))
+  LET essentialCovered = LENGTH((FOR item IN essential FILTER item.eligible RETURN 1))
+  LET optionalCovered = LENGTH((FOR item IN optional FILTER item.eligible RETURN 1))
+  SORT LOWER(career.name)
+  RETURN {
+    careerId: career._id,
+    careerName: career.name,
+    overall: { total: LENGTH(requirements), covered: overallCovered, coverage: LENGTH(requirements) == 0 ? 0 : overallCovered / LENGTH(requirements) },
+    essential: { total: LENGTH(essential), covered: essentialCovered, coverage: LENGTH(essential) == 0 ? 0 : essentialCovered / LENGTH(essential) },
+    optional: { total: LENGTH(optional), covered: optionalCovered, coverage: LENGTH(optional) == 0 ? 0 : optionalCovered / LENGTH(optional) }
+  }
+
+/* 12. Multi-hop traversal across the public Skill Graph.
+   Bind parameter: { "startVertex": "careers/<key copied from query 1>" } */
+FOR vertex, edge, path IN 1..3 ANY @startVertex GRAPH "skill_graph"
+  OPTIONS { order: "bfs", uniqueVertices: "path" }
+  FILTER vertex._id != @startVertex
+  SORT LENGTH(path.edges), vertex._id
+  LIMIT 100
+  RETURN {
+    vertexId: vertex._id,
+    vertexCollection: PARSE_IDENTIFIER(vertex._id).collection,
+    depth: LENGTH(path.edges),
+    edgePath: path.edges[*]._id
+  }
+
+/* 13. Read-only Batch 2 count and two-gate integrity check. */
+LET totalCourseCount = LENGTH((FOR course IN courses RETURN 1))
+LET eligibleCourseCount = LENGTH((FOR course IN courses FILTER course.recommendation_eligible == true RETURN 1))
+LET allowedMappingCount = LENGTH((FOR edge IN teaches FILTER edge.auto_recommendation_allowed == true RETURN 1))
+LET invalidAllowedMappingCount = LENGTH((
+  FOR edge IN teaches
+    FILTER edge.auto_recommendation_allowed == true
+    LET course = DOCUMENT(edge._from)
+    FILTER course == null OR course.recommendation_eligible != true
+    RETURN 1
+))
+LET eligibleCoursesWithoutAllowedMapping = LENGTH((
+  FOR course IN courses
+    FILTER course.recommendation_eligible == true
+    FILTER LENGTH((
+      FOR edge IN teaches
+        FILTER edge._from == course._id
+          AND edge.auto_recommendation_allowed == true
+        RETURN 1
+    )) == 0
+    RETURN 1
+))
+RETURN {
+  totalCourseCount: totalCourseCount,
+  eligibleCourseCount: eligibleCourseCount,
+  allowedMappingCount: allowedMappingCount,
+  invalidAllowedMappingCount: invalidAllowedMappingCount,
+  eligibleCoursesWithoutAllowedMapping: eligibleCoursesWithoutAllowedMapping
+}

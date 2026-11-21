@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import StatisticsDashboard, { normalizeCoverageRows } from "./features/statistics/StatisticsDashboard";
+import { useApiData, useApiPages } from "./api/hooks";
+import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
 import {
@@ -23,7 +25,6 @@ import {
   X,
 } from "lucide-react";
 import { getCatalogRepository } from "./repositories/catalogRepository";
-import { calculateEssentialSelfDeclaration } from "./features/skillGap/skillGapModel";
 import { useUserStore } from "./stores/userStore";
 import type { Career, Course, Skill } from "./types/catalog";
 import { validExternalHttpUrl } from "./utils/externalUrl";
@@ -52,6 +53,12 @@ const pretty = (s: string) =>
   s.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
 function App() {
   const isAdminRoute = useLocation().pathname.startsWith("/admin");
+  const [, setCatalogVersion] = useState(0);
+  useEffect(() => {
+    const unsubscribe = repo.subscribe(() => setCatalogVersion((version) => version + 1));
+    void repo.load();
+    return unsubscribe;
+  }, []);
   const [dark, setDark] = useState(
       () => localStorage.getItem("theme") === "dark",
     ),
@@ -149,6 +156,8 @@ function App() {
         )}
       </AnimatePresence>
       <main>
+        {repo.status === "loading" && <div className="container" role="status">Đang tải catalog từ Backend Node.js…</div>}
+        {repo.status === "error" && <div className="container warning" role="alert"><p>Không tải được catalog live: {repo.error}</p><button className="btn secondary" onClick={() => void repo.retry()}>Thử tải lại</button></div>}
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -156,7 +165,7 @@ function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/403" element={<ForbiddenPage />} />
-          <Route path="/statistics" element={<StatisticsRedirect />} />
+          <Route path="/statistics" element={<StatisticsDashboard />} />
           <Route element={<AdminGate />}>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Navigate to="/admin/dashboard" replace />} />
@@ -176,7 +185,16 @@ function App() {
             </Route>
           </Route>
           <Route path="/" element={<Home />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route element={<UserGate />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/career-goal" element={<CareerGoal />} />
+            <Route path="/my-skills" element={<MySkills />} />
+            <Route path="/skill-gap" element={<SkillGap />} />
+            <Route path="/career-fit" element={<CareerFit />} />
+            <Route path="/recommendations" element={<Recommendations />} />
+            <Route path="/learning-path" element={<LearningPath />} />
+            <Route path="/my-learning" element={<MyLearning />} />
+          </Route>
           <Route path="/careers" element={<Careers />} />
           <Route path="/careers/:id" element={<CareerDetail />} />
           <Route path="/skills" element={<Skills />} />
@@ -186,11 +204,11 @@ function App() {
           <Route path="/resources/:id" element={<ResourceDetail />} />
           <Route path="/providers" element={<Providers />} />
           <Route path="/graph" element={<GraphExplorer />} />
-          <Route path="/career-goal" element={<CareerGoal />} />
-          <Route path="/my-skills" element={<MySkills />} />
-          <Route path="/skill-gap" element={<SkillGap />} />
-          <Route path="/learning-path" element={<LearningPath />} />
-          <Route path="/my-learning" element={<MyLearning />} />
+
+
+
+
+
           <Route path="/data-quality" element={<DataQuality />} />
           <Route path="/about" element={<About />} />
           <Route path="*" element={<NotFound />} />
@@ -229,6 +247,11 @@ const Head = ({
     <p>{text}</p>
   </motion.div>
 );
+function CatalogMessage() {
+  if (repo.status === 'loading' || repo.status === 'idle') return <p className="notice" role="status">Đang tải dữ liệu catalog từ Backend…</p>;
+  if (repo.status === 'error') return <div className="warning" role="alert">{repo.error || 'Không thể tải catalog.'} <button className="btn secondary" onClick={() => void repo.retry()}>Thử lại</button></div>;
+  return null;
+}
 const SearchBox = ({
   value,
   set,
@@ -279,140 +302,42 @@ function Pager({
   ) : null;
 }
 function Home() {
-  const m = repo.getRaw().manifest as any;
+  const release = repo.getReleaseInfo() as any;
+  const report = repo.getCoverageReport();
+  const covered = report.reduce((sum, row) => sum + row.covered, 0);
+  const total = report.reduce((sum, row) => sum + row.essential, 0);
   const cards = [
-    [repo.getCareers().length, "Nghề nghiệp", BriefcaseBusiness],
-    [repo.getSkills().length, "Kỹ năng", BrainCircuit],
-    [repo.getCourses().length, "Học liệu", BookOpen],
-    [repo.getSkillGroups().length, "Nhóm ESCO", Layers3],
-    [repo.getProviders().length, "Nhà cung cấp", Building2],
+    [repo.getCareers().length, 'Nghề nghiệp', BriefcaseBusiness],
+    [repo.getSkills().length, 'Kỹ năng', BrainCircuit],
+    [repo.getCourses().length, 'Học liệu', BookOpen],
+    [repo.getSkillGroups().length, 'Nhóm ESCO', Layers3],
+    [repo.getProviders().length, 'Nhà cung cấp', Building2],
   ] as const;
   const reduceMotion = useReducedMotion();
   return (
     <>
       <section className="hero">
-        <motion.div
-          className="hero-copy"
-          initial={reduceMotion ? false : { opacity: 0, x: -32 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="eyebrow">
-            <span /> CAREER & SKILL GRAPH
-          </div>
-          <h1>
-            Khám phá kỹ năng —<br />
-            <em>Kiến tạo hành trình nghề nghiệp</em>
-          </h1>
-          <p>
-            Khám phá mối quan hệ giữa nghề nghiệp, kỹ năng và học liệu thông qua
-            Skill Graph sử dụng ArangoDB.
-          </p>
+        <motion.div className="hero-copy" initial={reduceMotion ? false : { opacity: 0, x: -32 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}>
+          <div className="eyebrow"><span /> CAREER & SKILL GRAPH</div>
+          <h1>Khám phá kỹ năng —<br /><em>Kiến tạo hành trình nghề nghiệp</em></h1>
+          <p>Khám phá mối quan hệ giữa nghề nghiệp, kỹ năng và học liệu thông qua Skill Graph sử dụng ArangoDB.</p>
           <div className="actions">
-            <Link className="btn primary" to="/careers">
-              Khám phá nghề nghiệp <ArrowRight />
-            </Link>
-            <Link className="btn secondary" to="/graph">
-              Xem Skill Graph <Network />
-            </Link>
-            <Link className="btn secondary" to="/career-goal">
-              Lộ trình mô phỏng
-            </Link>
+            <Link className="btn primary" to="/careers">Khám phá nghề nghiệp <ArrowRight /></Link>
+            <Link className="btn secondary" to="/graph">Xem Skill Graph <Network /></Link>
+            <Link className="btn secondary" to="/career-goal">Chọn nghề mục tiêu</Link>
           </div>
-          <small className="notice">
-            Dữ liệu được đồng bộ từ cơ sở dữ liệu SkillGraph.
-          </small>
+          <small className="notice">Dữ liệu catalog được đọc trực tiếp từ Backend Node.js và ArangoDB.</small>
         </motion.div>
-        <motion.div
-          className="graph-art"
-          initial={reduceMotion ? false : { opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.65, delay: 0.1 }}
-        >
+        <motion.div className="graph-art" initial={reduceMotion ? false : { opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.65, delay: 0.1 }}>
           <div className="glow" />
-          <svg className="graph-links" viewBox="0 0 600 500" aria-hidden="true">
-            <path d="M300 250 L120 105 M300 250 L485 105 M300 250 L115 390 M300 250 L480 390 M300 250 L300 54" />
-          </svg>
-          <div className="node center">
-            <Network />
-            <b>Skill Graph</b>
-          </div>
-          <div className="node n1">
-            <BriefcaseBusiness />
-            <b>Career</b>
-          </div>
-          <div className="node n2">
-            <BrainCircuit />
-            <b>Skill</b>
-          </div>
-          <div className="node n3">
-            <BookOpen />
-            <b>Resource</b>
-          </div>
-          <div className="node n4">
-            <Layers3 />
-            <b>ESCO Group</b>
-          </div>
-          <div className="node n5">
-            <Building2 />
-            <b>Provider</b>
-          </div>
-          <span className="relation-label rl1">requires_skill</span>
-          <span className="relation-label rl2">teaches</span>
-          <span className="relation-label rl3">offered_by</span>
+          <svg className="graph-links" viewBox="0 0 600 500" aria-hidden="true"><path d="M300 250 L120 105 M300 250 L485 105 M300 250 L115 390 M300 250 L480 390 M300 250 L300 54" /></svg>
+          <div className="node center"><Network /><b>SkillGraph</b></div><div className="node n1"><BriefcaseBusiness /><b>Career</b></div><div className="node n2"><BrainCircuit /><b>Skill</b></div><div className="node n3"><BookOpen /><b>Resource</b></div><div className="node n4"><Layers3 /><b>ESCO Group</b></div><div className="node n5"><Building2 /><b>Provider</b></div>
+          <span className="relation-label rl1">requires_skill</span><span className="relation-label rl2">teaches</span><span className="relation-label rl3">offered_by</span>
         </motion.div>
       </section>
-      <section className="stats">
-        {cards.map(([v, n, I], index) => (
-          <motion.div
-            className="stat"
-            key={n}
-            initial={reduceMotion ? false : { opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.35 }}
-            transition={{ delay: index * 0.06 }}
-            whileHover={reduceMotion ? undefined : { y: -6 }}
-          >
-            <div className="stat-icon">
-              <I />
-            </div>
-            <div>
-              <strong>{v}</strong>
-              <span>{n}</span>
-            </div>
-          </motion.div>
-        ))}
-      </section>
-      <section className="section">
-        <div className="section-heading">
-          <div>
-            <div className="eyebrow">DỮ LIỆU ĐỒ THỊ</div>
-            <h2>
-              {m.essential_direct}/{m.essential_total} yêu cầu Essential có
-              direct_topic
-            </h2>
-          </div>
-          <Link className="text-link" to="/careers">
-            Khám phá nghề nghiệp <ArrowRight />
-          </Link>
-        </div>
-        <div className="steps">
-          <Info
-            n="01"
-            t="Chọn nghề"
-            x="Khám phá yêu cầu Essential và Optional."
-          />
-          <Info
-            n="02"
-            t="Khai báo kỹ năng"
-            x="Lưu trạng thái mô phỏng trên trình duyệt."
-          />
-          <Info
-            n="03"
-            t="Khám phá học liệu"
-            x="Xem bằng chứng chủ đề và giới hạn ánh xạ."
-          />
-        </div>
+      <section className="stats">{cards.map(([value, label, Icon], index) => <motion.div className="stat" key={label} initial={reduceMotion ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.35 }} transition={{ delay: index * 0.06 }} whileHover={reduceMotion ? undefined : { y: -6 }}><div className="stat-icon"><Icon /></div><div><strong>{value.toLocaleString('vi-VN')}</strong><span>{label}</span></div></motion.div>)}</section>
+      <section className="section"><div className="section-heading"><div><div className="eyebrow">BAO PHỦ HỌC LIỆU</div><h2>{covered}/{total} yêu cầu Essential có học liệu qua cả hai điều kiện phê duyệt</h2><p>Release {release.version || 'đang tải'} · ArangoDB {release.arangoVersion || ''}</p></div><Link className="text-link" to="/careers">Khám phá nghề nghiệp <ArrowRight /></Link></div>
+        <div className="steps"><Info n="01" t="Chọn nghề" x="Xem yêu cầu Essential và Optional từ dữ liệu live." /><Info n="02" t="Khai báo kỹ năng" x="Trạng thái cá nhân được lưu qua tài khoản trên Backend." /><Info n="03" t="Khám phá học liệu" x="Xem bằng chứng và giới hạn ánh xạ đã được phê duyệt." /></div>
       </section>
     </>
   );
@@ -431,36 +356,12 @@ const Info = ({ n, t, x }: { n: string; t: string; x: string }) => (
   </motion.div>
 );
 function Dashboard() {
-  const st = useUserStore(),
-    car = st.selectedCareerId ? repo.getCareerById(st.selectedCareerId) : null,
-    req = car
-      ? repo
-          .getCareerRequirements(car.id)
-          .filter((x) => x.requirementType === "essential")
-      : [],
-    done = req.filter((x) => st.declaredSkillIds.includes(x.skill.id)).length;
-  return (
-    <div className="container">
-      <Head
-        tag="DASHBOARD MÔ PHỎNG"
-        title="Tổng quan hành trình"
-        text="Trạng thái cá nhân được lưu cục bộ, chưa đồng bộ máy chủ."
-      />
-      <div className="stat-summary">
-        <Metric v={car?.name || "Chưa chọn"} l="Nghề mục tiêu" />
-        <Metric v={`${done}/${req.length}`} l="Essential đã tự khai báo" />
-        <Metric v={st.savedResourceIds.length} l="Học liệu đã lưu" />
-      </div>
-      <div className="actions">
-        <Link className="btn primary" to={car ? "/my-skills" : "/career-goal"}>
-          {car ? "Cập nhật kỹ năng" : "Chọn nghề mục tiêu"}
-        </Link>
-        <Link className="btn secondary" to="/graph">
-          Mở Skill Graph
-        </Link>
-      </div>
-    </div>
-  );
+  const { user } = useAuth();
+  const progress = useApiData<any>(user?.role === 'user' ? '/me/progress' : null);
+  const gap = useApiData<any>(user?.role === 'user' && progress.data?.careerGoalId ? '/me/skill-gap' : null);
+  const profile = progress.data;
+  const career = profile?.careerGoalId ? repo.getCareerById(profile.careerGoalId) : null;
+  return <div className="container"><Head tag="DASHBOARD CÁ NHÂN" title="Tổng quan hành trình" text="Mục tiêu và tiến độ được tải từ hồ sơ tài khoản trên Backend." />{progress.loading && <p role="status">Đang tải tiến độ cá nhân…</p>}{progress.error && <div className="warning" role="alert">{progress.error}</div>}{gap.loading && <p role="status">Đang tính skill gap…</p>}{gap.error && <div className="warning" role="alert">{gap.error}</div>}<div className="stat-summary"><Metric v={career?.name || (profile?.careerGoalId ? 'Đang tải nghề…' : 'Chưa chọn')} l="Nghề mục tiêu" /><Metric v={gap.data ? `${gap.data.essential.owned}/${gap.data.essential.required}` : '—'} l="Essential tự khai báo" /><Metric v={(profile?.savedResourceIds || []).length} l="Học liệu đã lưu" /></div><div className="actions"><Link className="btn primary" to={career ? '/my-skills' : '/career-goal'}>{career ? 'Cập nhật kỹ năng' : 'Chọn nghề mục tiêu'}</Link><Link className="btn secondary" to="/career-fit">Career Fit</Link><Link className="btn secondary" to="/recommendations">Gợi ý học liệu</Link><Link className="btn secondary" to="/graph">Mở Skill Graph</Link></div><p className="notice">Kỹ năng là trạng thái tự khai báo; xem hoặc hoàn thành học liệu không xác nhận mức thành thạo.</p></div>;
 }
 const Metric = ({ v, l }: { v: string | number; l: string }) => (
   <div>
@@ -469,71 +370,16 @@ const Metric = ({ v, l }: { v: string | number; l: string }) => (
   </div>
 );
 function Careers() {
-  const [q, setQ] = useState(""),
-    [g, setG] = useState("");
-  const all = repo.getCareers(),
-    groups = [...new Set(all.map((x) => x.careerGroup))],
-    f = all.filter(
-      (x) =>
-        (x.name + x.description).toLowerCase().includes(q.toLowerCase()) &&
-        (!g || x.careerGroup === g),
-    );
-  return (
-    <div className="container">
-      <Head
-        tag="CAREER EXPLORER"
-        title="Khám phá 12 nghề nghiệp"
-        text="Dữ liệu nghề và quan hệ kỹ năng từ ESCO."
-      />
-      <div className="toolbar">
-        <SearchBox value={q} set={setQ} placeholder="Tìm nghề..." />
-        <select value={g} onChange={(e) => setG(e.target.value)}>
-          <option value="">Tất cả nhóm</option>
-          {groups.map((x) => (
-            <option key={x}>{x}</option>
-          ))}
-        </select>
-      </div>
-      <div className="catalog-grid">
-        {f.map((x) => (
-          <CareerCard key={x.id} x={x} />
-        ))}
-      </div>
-    </div>
-  );
+  const [q, setQ] = useState(''), [g, setG] = useState('');
+  const all = repo.getCareers(), groups = [...new Set(all.map((x) => x.careerGroup).filter(Boolean))];
+  const filtered = all.filter((x) => (x.name + x.description).toLowerCase().includes(q.toLowerCase()) && (!g || x.careerGroup === g));
+  return <div className="container"><Head tag="CAREER EXPLORER" title={`Khám phá ${all.length} nghề nghiệp`} text="Dữ liệu nghề và quan hệ kỹ năng được tải từ Node API." /><div className="toolbar"><SearchBox value={q} set={setQ} placeholder="Tìm nghề..." /><select value={g} onChange={(e) => setG(e.target.value)}><option value="">Tất cả nhóm</option>{groups.map((x) => <option key={x}>{x}</option>)}</select></div><CatalogMessage />{repo.status === 'ready' && <div className="catalog-grid">{filtered.map((x) => <CareerCard key={x.id} x={x} />)}{!filtered.length && <Empty />}</div>}</div>;
 }
 function CareerCard({ x }: { x: Career }) {
-  const r = repo.getCareerRequirements(x.id),
-    setCareer = useUserStore((s) => s.setCareer);
-  return (
-    <article className="catalog-card">
-      <div className="card-top">
-        <span className="card-icon">
-          <BriefcaseBusiness />
-        </span>
-        <span className="pill">ISCO {x.iscoGroup}</span>
-      </div>
-      <h3>{x.name}</h3>
-      <p className="muted">{x.careerGroup}</p>
-      <p className="clamp">{x.description}</p>
-      <div className="counts">
-        <span>
-          <b>{r.filter((y) => y.requirementType === "essential").length}</b>{" "}
-          Essential
-        </span>
-        <span>
-          <b>{r.filter((y) => y.requirementType === "optional").length}</b>{" "}
-          Optional
-        </span>
-      </div>
-      <div className="card-actions">
-        <Link className="card-link" to={`/careers/${x.key}`}>
-          Chi tiết <ArrowRight />
-        </Link>
-        <button onClick={() => setCareer(x.id)}>Chọn mục tiêu</button>
-      </div>
-    </article>
-  );
+  const requirements = repo.getCareerRequirements(x.id);
+  const setCareer = useUserStore((state) => state.setCareer);
+  const { user } = useAuth();
+  return <article className="catalog-card"><div className="card-top"><span className="card-icon"><BriefcaseBusiness /></span><span className="pill">ISCO {x.iscoGroup}</span></div><h3>{x.name}</h3><p className="muted">{x.careerGroup}</p><p className="clamp">{x.description}</p><div className="counts"><span><b>{requirements.filter((row) => row.requirementType === 'essential').length}</b> Essential</span><span><b>{requirements.filter((row) => row.requirementType === 'optional').length}</b> Optional</span></div><div className="card-actions"><Link className="card-link" to={`/careers/${x.key}`}>Chi tiết <ArrowRight /></Link>{user?.role === 'user' ? <button onClick={() => void setCareer(x.id)}>Chọn mục tiêu</button> : <Link className="card-link" to="/login">Đăng nhập để chọn mục tiêu</Link>}</div></article>;
 }
 function CareerDetail() {
   const { id = "" } = useParams(),
@@ -541,6 +387,9 @@ function CareerDetail() {
     [tab, setTab] = useState("essential"),
     [q, setQ] = useState("");
   const setCareer = useUserStore((s) => s.setCareer);
+  const { user } = useAuth();
+  if (repo.status === "loading" || repo.status === "idle") return <div className="container" role="status">Đang tải nghề nghiệp từ Backend…</div>;
+  if (repo.status === "error") return <div className="container warning" role="alert">{repo.error}</div>;
   if (!x) return <NotFound />;
   const all = repo.getCareerRequirements(x.id),
     rows = all.filter(
@@ -562,9 +411,7 @@ function CareerDetail() {
           <a href={x.escoUri} target="_blank" rel="noreferrer">
             ESCO <ExternalLink />
           </a>
-          <button className="btn primary" onClick={() => setCareer(x.id)}>
-            Chọn làm mục tiêu
-          </button>
+          {user?.role === "user" ? <button className="btn primary" onClick={() => void setCareer(x.id)}>Chọn làm mục tiêu</button> : <Link className="btn primary" to="/login">Đăng nhập để chọn mục tiêu</Link>}
         </div>
         <div className="metric-card">
           <strong>{all.length}</strong>
@@ -660,48 +507,10 @@ const SelfDeclaredEssentialProgress = ({
   );
 };
 function Skills() {
-  const [q, setQ] = useState(""),
-    [type, setType] = useState(""),
-    [page, setPage] = useState(1),
-    all = repo.getSkills(),
-    types = [...new Set(all.map((x) => x.skillType))],
-    f = all.filter(
-      (x) =>
-        (x.name + x.description).toLowerCase().includes(q.toLowerCase()) &&
-        (!type || x.skillType === type),
-    );
-  return (
-    <div className="container">
-      <Head
-        tag="SKILL EXPLORER"
-        title="420 kỹ năng ESCO"
-        text="Tìm kiếm kỹ năng và khám phá các liên kết nghề nghiệp, học liệu."
-      />
-      <div className="toolbar">
-        <SearchBox
-          value={q}
-          set={(v) => {
-            setQ(v);
-            setPage(1);
-          }}
-          placeholder="Tìm kỹ năng..."
-        />
-        <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">Tất cả loại</option>
-          {types.map((x) => (
-            <option key={x}>{pretty(x)}</option>
-          ))}
-        </select>
-      </div>
-      <div className="list cards">
-        {f.slice((page - 1) * PAGE, page * PAGE).map((x) => (
-          <SkillRow key={x.id} x={x} />
-        ))}
-      </div>
-      {!f.length && <Empty />}
-      <Pager page={page} total={f.length} set={setPage} />
-    </div>
-  );
+  const [q, setQ] = useState(''), [type, setType] = useState(''), [page, setPage] = useState(1);
+  const all = repo.getSkills(), types = [...new Set(all.map((x) => x.skillType).filter(Boolean))];
+  const filtered = all.filter((x) => (x.name + x.description).toLowerCase().includes(q.toLowerCase()) && (!type || x.skillType === type));
+  return <div className="container"><Head tag="SKILL EXPLORER" title={`${all.length.toLocaleString('vi-VN')} kỹ năng`} text="Tìm kiếm kỹ năng và khám phá các liên kết nghề nghiệp, học liệu." /><div className="toolbar"><SearchBox value={q} set={(value) => { setQ(value); setPage(1); }} placeholder="Tìm kỹ năng..." /><select value={type} onChange={(event) => { setType(event.target.value); setPage(1); }}><option value="">Tất cả loại</option>{types.map((value) => <option key={value} value={value}>{pretty(value)}</option>)}</select></div><CatalogMessage /><div className="list cards">{repo.status === 'ready' && filtered.slice((page - 1) * PAGE, page * PAGE).map((x) => <SkillRow key={x.id} x={x} />)}</div>{repo.status === 'ready' && !filtered.length && <Empty />}<Pager page={page} total={filtered.length} set={setPage} /></div>;
 }
 const SkillRow = ({ x }: { x: Skill }) => (
   <Link className="list-row" to={`/skills/${x.key}`}>
@@ -716,616 +525,112 @@ const SkillRow = ({ x }: { x: Skill }) => (
     <ArrowRight className="row-arrow" />
   </Link>
 );
+function apiCourse(row: any): Course {
+  const id = String(row.id || `courses/${row.key || ''}`);
+  return { key: String(row.key || id.split('/').slice(-1)[0] || ''), id, title: String(row.title || ''), canonicalUrl: String(row.canonicalUrl || ''), providerName: String(row.providerName || ''), resourceType: String(row.resourceType || ''), language: String(row.language || ''), level: row.level == null ? null : String(row.level), certificateAvailable: typeof row.certificateAvailable === 'boolean' ? row.certificateAvailable : null, verifiedOutcomeProficiency: null, raw: row };
+}
 function SkillDetail() {
-  const { id = "" } = useParams(),
-    x = repo.getSkillById(id);
+  const { id = '' } = useParams();
+  const detail = useApiData<any>(id ? `/skills/${encodeURIComponent(id)}` : null);
+  const resourcePage = useApiPages<any>(id ? `/skills/${encodeURIComponent(id)}/resources` : null);
+  const x = repo.getSkillById(id) || detail.data;
+  if (detail.loading || resourcePage.loading) return <div className="container" role="status">Đang tải chi tiết kỹ năng từ Backend…</div>;
+  if (detail.error || resourcePage.error) return <div className="container warning" role="alert">{detail.error || resourcePage.error}</div>;
   if (!x) return <NotFound />;
-  const careers = repo.getCareersForSkill(x.id),
-    resources = repo.getCoursesForSkill(x.id);
-  return (
-    <div className="container">
-      <Link className="back" to="/skills">
-        <ArrowLeft /> Kỹ năng
-      </Link>
-      <section className="detail-hero">
-        <div>
-          <span className="pill">{pretty(x.skillType)}</span>
-          <h1>{x.name}</h1>
-          <p>{x.description}</p>
-          <a href={x.escoUri} target="_blank" rel="noreferrer">
-            ESCO <ExternalLink />
-          </a>
-        </div>
-        <div className="metric-card">
-          <strong>{careers.length}</strong>
-          <span>Nghề yêu cầu</span>
-          <div>{resources.length} học liệu liên quan</div>
-        </div>
-      </section>
-      <div className="content-section">
-        <h2>Nghề nghiệp liên quan</h2>
-        <div className="chip-list">
-          {careers.map((y) => (
-            <Link key={y.career.id} to={`/careers/${y.career.key}`}>
-              <span>{y.career.name}</span>
-              <small>{pretty(y.type)}</small>
-            </Link>
-          ))}
-        </div>
-      </div>
-      <div className="content-section">
-        <h2>Học liệu và bằng chứng</h2>
-        <div className="catalog-grid resources">
-          {resources.map((y) => (
-            <ResourceCard
-              key={y.course.id}
-              x={y.course}
-              scopes={y.evidence.map((e) => e.evidenceScope)}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  const careers = detail.data?.careers || [];
+  const resources = resourcePage.data || [];
+  return <div className="container"><Link className="back" to="/skills"><ArrowLeft /> Kỹ năng</Link><section className="detail-hero"><div><span className="pill">{pretty(x.skillType)}</span><h1>{x.name}</h1><p>{x.description}</p>{x.escoUri && <a href={x.escoUri} target="_blank" rel="noreferrer">ESCO <ExternalLink /></a>}</div><div className="metric-card"><strong>{careers.length}</strong><span>Nghề yêu cầu</span><div>{detail.data?.linkedResourceCount ?? resources.length} học liệu liên quan</div></div></section><div className="content-section"><h2>Nghề nghiệp liên quan</h2><div className="chip-list">{careers.map((row: any) => <Link key={row.career.id} to={`/careers/${row.career.key}`}><span>{row.career.name}</span><small>{pretty(row.requirementType)}</small></Link>)}</div></div><div className="content-section"><h2>Học liệu đã được ánh xạ</h2>{resources.length ? <div className="catalog-grid resources">{resources.map((row: any) => <ResourceCard key={row.resource.id} x={apiCourse(row.resource)} scopes={row.edge?.evidenceScope ? [row.edge.evidenceScope] : []} />)}</div> : <p className="notice">Chưa có học liệu được ánh xạ cho kỹ năng này.</p>}</div></div>;
 }
 function Taxonomy() {
-  const [q, setQ] = useState(""),
-    [selected, setSelected] = useState("");
-  const groups = repo
-      .getSkillGroups()
-      .filter((x) => (x.name + x.code).toLowerCase().includes(q.toLowerCase())),
-    skills = selected ? repo.getSkillsInGroup(selected) : [];
-  return (
-    <div className="container">
-      <Head
-        tag="ESCO TAXONOMY"
-        title="149 nhóm kỹ năng"
-        text="Quan hệ phân loại ESCO; không phải thứ tự học hay prerequisite."
-      />
-      <SearchBox value={q} set={setQ} placeholder="Tìm nhóm kỹ năng..." />
-      <div className="taxonomy">
-        <div className="group-list">
-          {groups.map((g) => (
-            <button
-              className={selected === g.id ? "active" : ""}
-              onClick={() => setSelected(g.id)}
-              key={g.id}
-            >
-              <b>{g.code}</b>
-              <span>{g.name}</span>
-            </button>
-          ))}
-        </div>
-        <div className="taxonomy-detail">
-          {selected ? (
-            <>
-              <h2>
-                {repo.getSkillGroups().find((g) => g.id === selected)?.name}
-              </h2>
-              {skills.map((s) => (
-                <SkillRow key={s.id} x={s} />
-              ))}
-            </>
-          ) : (
-            <Empty />
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  const [q, setQ] = useState(''), [selected, setSelected] = useState('');
+  const groups = repo.getSkillGroups().filter((row) => (row.name + row.code).toLowerCase().includes(q.toLowerCase()));
+  const skills = useApiPages<Skill>(selected ? `/skill-groups/${encodeURIComponent(selected)}/skills` : null);
+  const group = groups.find((row) => row.id === selected || row.key === selected);
+  return <div className="container"><Head tag="ESCO TAXONOMY" title={`${repo.getSkillGroups().length.toLocaleString('vi-VN')} nhóm kỹ năng`} text="Quan hệ phân loại ESCO; taxonomy không biểu thị prerequisite hay thứ tự học." /><SearchBox value={q} set={setQ} placeholder="Tìm nhóm kỹ năng..." /><CatalogMessage /><div className="taxonomy"><div className="group-list">{groups.map((row) => <button className={selected === row.id || selected === row.key ? 'active' : ''} onClick={() => setSelected(row.key)} key={row.id}><b>{row.code}</b><span>{row.name}</span></button>)}</div><div className="taxonomy-detail">{selected ? <><h2>{group?.name || 'Nhóm kỹ năng'}</h2>{skills.loading && <p role="status">Đang tải thành viên nhóm…</p>}{skills.error && <p role="alert">{skills.error}</p>}{skills.data?.map((row) => <SkillRow key={row.id} x={row} />)}{skills.data?.length === 0 && <p>Nhóm này chưa có kỹ năng được liên kết.</p>}</> : <Empty />}</div></div></div>;
 }
 function Resources() {
-  const [q, setQ] = useState(""),
-    [type, setType] = useState(""),
-    [page, setPage] = useState(1),
-    all = repo.getCourses(),
-    types = [...new Set(all.map((x) => x.resourceType))].sort(),
-    f = all.filter(
-      (x) =>
-        (x.title + x.providerName).toLowerCase().includes(q.toLowerCase()) &&
-        (!type || x.resourceType === type),
-    );
-  return (
-    <div className="container">
-      <Head
-        tag="RESOURCE CATALOG"
-        title="504 học liệu"
-        text="Tài liệu, tutorial, course và các loại tài nguyên khác theo metadata gốc."
-      />
-      <div className="toolbar">
-        <SearchBox
-          value={q}
-          set={setQ}
-          placeholder="Tìm học liệu hoặc nhà cung cấp..."
-        />
-        <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">Tất cả định dạng</option>
-          {types.map((x) => (
-            <option key={x} value={x}>
-              {pretty(x)}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="catalog-grid resources">
-        {f.slice((page - 1) * PAGE, page * PAGE).map((x) => (
-          <ResourceCard key={x.id} x={x} />
-        ))}
-      </div>
-      <Pager page={page} total={f.length} set={setPage} />
-    </div>
-  );
+  const [q, setQ] = useState(''), [type, setType] = useState(''), [page, setPage] = useState(1);
+  const all = repo.getCourses(), types = [...new Set(all.map((x) => x.resourceType).filter(Boolean))].sort();
+  const filtered = all.filter((x) => (x.title + x.providerName).toLowerCase().includes(q.toLowerCase()) && (!type || x.resourceType === type));
+  return <div className="container"><Head tag="RESOURCE CATALOG" title={`${all.length.toLocaleString('vi-VN')} học liệu`} text="Học liệu chính thức và các bản ghi ứng dụng đã qua phê duyệt." /><div className="toolbar"><SearchBox value={q} set={(value) => { setQ(value); setPage(1); }} placeholder="Tìm học liệu hoặc nhà cung cấp..." /><select value={type} onChange={(event) => { setType(event.target.value); setPage(1); }}><option value="">Tất cả định dạng</option>{types.map((value) => <option key={value}>{pretty(value)}</option>)}</select></div><CatalogMessage /><div className="catalog-grid resources">{repo.status === 'ready' && filtered.slice((page - 1) * PAGE, page * PAGE).map((x) => <ResourceCard key={x.id} x={x} />)}{repo.status === 'ready' && !filtered.length && <Empty />}</div><Pager page={page} total={filtered.length} set={setPage} /></div>;
 }
 function ResourceCard({ x, scopes = [] }: { x: Course; scopes?: string[] }) {
-  const save = useUserStore((s) => s.toggleSaved),
-    saved = useUserStore((s) => s.savedResourceIds.includes(x.id));
-  return (
-    <article className="catalog-card resource">
-      <div className="card-top">
-        <span className="card-icon">
-          <BookOpen />
-        </span>
-        <span className="pill">{x.language.toUpperCase()}</span>
-      </div>
-      <h3>{x.title}</h3>
-      <p className="muted">{x.providerName}</p>
-      <div className="tags">
-        <span>{pretty(x.resourceType)}</span>
-        {x.level && <span>{pretty(x.level)}</span>}
-        {[...new Set(scopes)].map((s) => (
-          <span className={s === "direct_topic" ? "direct" : ""} key={s}>
-            {pretty(s)}
-          </span>
-        ))}
-      </div>
-      <div className="card-actions resource-card-footer">
-        <Link className="card-link" to={`/resources/${x.key}`}>
-          Chi tiết <ArrowRight />
-        </Link>
-        <button
-          className={`resource-save-btn ${saved ? "is-saved" : ""}`}
-          type="button"
-          aria-pressed={saved}
-          aria-label={saved ? `Bỏ lưu ${x.title}` : `Lưu học liệu ${x.title}`}
-          title={saved ? "Nhấn để bỏ lưu học liệu" : "Lưu học liệu"}
-          onClick={() => save(x.id)}
-        >
-          {saved ? (
-            <>
-              <BookmarkCheck aria-hidden="true" /> Đã lưu
-            </>
-          ) : (
-            <>
-              <BookmarkPlus aria-hidden="true" /> Lưu học liệu
-            </>
-          )}
-        </button>
-      </div>
-    </article>
-  );
+  const save = useUserStore((state) => state.toggleSaved);
+  const saved = useUserStore((state) => state.savedResourceIds.includes(x.id));
+  const { user } = useAuth();
+  return <article className="catalog-card resource"><div className="card-top"><span className="card-icon"><BookOpen /></span><span className="pill">{x.language.toUpperCase()}</span></div><h3>{x.title}</h3><p className="muted">{x.providerName}</p><div className="tags"><span>{pretty(x.resourceType)}</span>{x.level && <span>{pretty(x.level)}</span>}{[...new Set(scopes)].map((scope) => <span className={scope === 'direct_topic' ? 'direct' : ''} key={scope}>{pretty(scope)}</span>)}</div><div className="card-actions resource-card-footer"><Link className="card-link" to={`/resources/${encodeURIComponent(x.id)}`}>Chi tiết <ArrowRight /></Link>{user?.role === 'user' ? <button className={`resource-save-btn ${saved ? 'is-saved' : ''}`} type="button" aria-pressed={saved} aria-label={saved ? `Bỏ lưu ${x.title}` : `Lưu học liệu ${x.title}`} title={saved ? 'Nhấn để bỏ lưu học liệu' : 'Lưu học liệu'} onClick={() => void save(x.id)}>{saved ? <><BookmarkCheck aria-hidden="true" /> Đã lưu</> : <><BookmarkPlus aria-hidden="true" /> Lưu học liệu</>}</button> : <Link className="resource-save-btn" to="/login">Đăng nhập để lưu</Link>}</div></article>;
 }
 function ResourceDetail() {
-  const { id = "" } = useParams(),
-    x = repo.getCourseById(id);
-  if (!x) return <NotFound />;
-  const skills = repo.getSkillsForCourse(x.id),
-    sourceUrl = validExternalHttpUrl(x.canonicalUrl);
-  return (
-    <div className="container">
-      <Link className="back" to="/resources">
-        <ArrowLeft /> Học liệu
-      </Link>
-      <section className="detail-hero">
-        <div>
-          <span className="pill">{pretty(x.resourceType)}</span>
-          <h1>{x.title}</h1>
-          <p>{x.providerName}</p>
-          {sourceUrl ? (
-            <a
-              className="btn primary resource-source-btn"
-              href={sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Mở nguồn <ExternalLink aria-hidden="true" />
-            </a>
-          ) : (
-            <span className="resource-source-unavailable">
-              <button
-                className="btn resource-source-btn"
-                type="button"
-                disabled
-                aria-describedby="resource-source-reason"
-              >
-                Chưa có liên kết <ExternalLink aria-hidden="true" />
-              </button>
-              <small id="resource-source-reason">
-                Học liệu này chưa có URL nguồn HTTP/HTTPS hợp lệ.
-              </small>
-            </span>
-          )}
-        </div>
-        <div className="metric-card resource-meta">
-          <span>
-            Ngôn ngữ <b>{x.language.toUpperCase()}</b>
-          </span>
-          <span>
-            Trình độ <b>{x.level || "Chưa xác minh"}</b>
-          </span>
-          <span>
-            Chứng chỉ{" "}
-            <b>
-              {x.certificateAvailable === null
-                ? "Chưa xác minh"
-                : x.certificateAvailable
-                  ? "Có"
-                  : "Không"}
-            </b>
-          </span>
-          <span>
-            Kết quả thành thạo{" "}
-            <b>{x.verifiedOutcomeProficiency || "Chưa xác minh"}</b>
-          </span>
-        </div>
-      </section>
-      <div className="content-section">
-        <h2>Kỹ năng liên quan</h2>
-        <div className="list">
-          {skills.map((s) => (
-            <Link
-              className="list-row"
-              key={s.skill.id}
-              to={`/skills/${s.skill.key}`}
-            >
-              <span className="skill-dot" />
-              <div>
-                <h3>{s.skill.name}</h3>
-                {s.evidence.map((e) => (
-                  <p key={e.edge.id}>
-                    <b>{pretty(e.evidenceScope)}</b>
-                    {e.evidenceLimit && ` — ${e.evidenceLimit}`}
-                  </p>
-                ))}
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  const { id = '' } = useParams();
+  const result = useApiData<any>(id ? `/resources/${encodeURIComponent(id)}` : null);
+  if (result.loading) return <div className="container" role="status">Đang tải học liệu từ Backend…</div>;
+  if (result.error) return <div className="container warning" role="alert">{result.error}</div>;
+  if (!result.data?.resource) return <NotFound />;
+  const x = apiCourse(result.data.resource), skills = result.data.skills || [];
+  const sourceUrl = validExternalHttpUrl(x.canonicalUrl);
+  return <div className="container"><Link className="back" to="/resources"><ArrowLeft /> Học liệu</Link><section className="detail-hero"><div><span className="pill">{pretty(x.resourceType)}</span><h1>{x.title}</h1><p>{x.providerName}</p>{sourceUrl ? <a className="btn primary resource-source-btn" href={sourceUrl} target="_blank" rel="noreferrer">Mở nguồn <ExternalLink aria-hidden="true" /></a> : <span className="resource-source-unavailable"><button className="btn resource-source-btn" type="button" disabled aria-describedby="resource-source-reason">Chưa có liên kết <ExternalLink aria-hidden="true" /></button><small id="resource-source-reason">Học liệu này chưa có URL nguồn HTTP/HTTPS hợp lệ.</small></span>}</div><div className="metric-card resource-meta"><span>Ngôn ngữ <b>{x.language.toUpperCase() || 'Chưa xác minh'}</b></span><span>Trình độ <b>{x.level || 'Chưa xác minh'}</b></span><span>Chứng chỉ <b>{x.certificateAvailable === null ? 'Chưa xác minh' : x.certificateAvailable ? 'Có' : 'Không'}</b></span></div></section><div className="content-section"><h2>Kỹ năng và bằng chứng ánh xạ</h2><div className="list">{skills.map((row: any) => <Link className="list-row" key={row.skill.id} to={`/skills/${row.skill.key}`}><span className="skill-dot" /><div><h3>{row.skill.name}</h3>{row.evidenceScope && <p><b>{pretty(row.evidenceScope)}</b>{row.mappingNote ? ` — ${row.mappingNote}` : ''}</p>}</div></Link>)}</div>{!skills.length && <p className="notice">Học liệu chưa có liên kết kỹ năng công khai.</p>}</div></div>;
 }
 function Providers() {
-  const [q, setQ] = useState(""),
-    all = repo.getProviders(),
-    f = all.filter((x) => x.name.toLowerCase().includes(q.toLowerCase()));
-  return (
-    <div className="container">
-      <Head
-        tag="PROVIDERS"
-        title="179 nhà cung cấp"
-        text="Nhà xuất bản và tổ chức cung cấp học liệu trong release."
-      />
-      <SearchBox value={q} set={setQ} placeholder="Tìm nhà cung cấp..." />
-      <div className="catalog-grid">
-        {f.map((x) => {
-          const n = repo.getCoursesByProvider(x.id).length;
-          return (
-            <article className="catalog-card" key={x.id}>
-              <span className="card-icon">
-                <Database />
-              </span>
-              <h3>{x.name}</h3>
-              <p>{n} học liệu</p>
-              {x.officialWebsite && (
-                <a href={x.officialWebsite} target="_blank" rel="noreferrer">
-                  Website <ExternalLink />
-                </a>
-              )}
-            </article>
-          );
-        })}
-      </div>
-    </div>
-  );
+  const [q, setQ] = useState(''), all = repo.getProviders();
+  const filtered = all.filter((x) => x.name.toLowerCase().includes(q.toLowerCase()));
+  return <div className="container"><Head tag="PROVIDERS" title={`${all.length.toLocaleString('vi-VN')} nhà cung cấp`} text="Nhà xuất bản và tổ chức cung cấp học liệu từ catalog live." /><SearchBox value={q} set={setQ} placeholder="Tìm nhà cung cấp..." /><CatalogMessage /><div className="catalog-grid">{repo.status === 'ready' && filtered.map((provider) => <article className="catalog-card" key={provider.id}><span className="card-icon"><Database /></span><h3>{provider.name}</h3><p>{(provider.resourceCount || 0).toLocaleString('vi-VN')} học liệu</p>{provider.officialWebsite && <a href={provider.officialWebsite} target="_blank" rel="noreferrer">Website <ExternalLink /></a>}</article>)}{repo.status === 'ready' && !filtered.length && <Empty />}</div></div>;
 }
-function GraphPage() {
-  const [first] = repo.getCareers(),
-    [career, setCareer] = useState(first.id);
-  const data = repo.getGraphForCareer(career),
-    nodes = data.nodes.slice(0, 80).map((n, i) => ({
-      id: n.id,
-      data: { label: n.label },
-      position: { x: (i % 8) * 180, y: Math.floor(i / 8) * 100 },
-      style: {
-        background: n.type === "career" ? "#4f46e5" : "#06b6d4",
-        color: "#fff",
-        border: 0,
-        borderRadius: 12,
-        width: 150,
-      },
-    })),
-    edges = data.edges
-      .filter((e) => nodes.some((n) => n.id === e.target))
-      .map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: "requires_skill",
-      }));
-  return (
-    <div className="container graph-page">
-      <Head
-        tag="INTERACTIVE GRAPH"
-        title="Skill Graph tập trung"
-        text="Chỉ tải subgraph của một nghề; hướng cạnh Career → Skill."
-      />
-      <select value={career} onChange={(e) => setCareer(e.target.value)}>
-        {repo.getCareers().map((x) => (
-          <option value={x.id} key={x.id}>
-            {x.name}
-          </option>
-        ))}
-      </select>
-      <div className="graph-canvas">
-        <ReactFlow nodes={nodes} edges={edges} fitView>
-          <Background />
-          <MiniMap />
-          <Controls />
-        </ReactFlow>
-      </div>
-      <p className="notice">
-        Đang giới hạn tối đa 80 node để bảo đảm hiệu năng. Không tự sinh
-        prerequisite.
-      </p>
-    </div>
-  );
-}
+function GraphPage() { return <GraphExplorer />; }
 function CareerGoal() {
-  const setCareer = useUserStore((s) => s.setCareer),
-    current = useUserStore((s) => s.selectedCareerId);
-  return (
-    <div className="container">
-      <Head
-        tag="CHẾ ĐỘ MÔ PHỎNG"
-        title="Chọn nghề mục tiêu"
-        text="Mục tiêu được lưu cục bộ trên trình duyệt, chưa đồng bộ máy chủ."
-      />
-      <div className="catalog-grid">
-        {repo.getCareers().map((x) => (
-          <button
-            className={`goal-card ${current === x.id ? "active" : ""}`}
-            key={x.id}
-            onClick={() => setCareer(x.id)}
-          >
-            <BriefcaseBusiness />
-            <b>{x.name}</b>
-            <span>{x.careerGroup}</span>
-          </button>
-        ))}
-      </div>
-      {current && (
-        <Link className="btn primary" to="/my-skills">
-          Tiếp tục khai báo kỹ năng <ArrowRight />
-        </Link>
-      )}
-    </div>
-  );
+  const setCareer = useUserStore((state) => state.setCareer), current = useUserStore((state) => state.selectedCareerId), saving = useUserStore((state) => state.saving), error = useUserStore((state) => state.error);
+  return <div className="container"><Head tag="NGHỀ MỤC TIÊU" title="Chọn nghề mục tiêu" text="Lựa chọn được lưu vào hồ sơ của bạn trên Backend." />{error && <div className="warning" role="alert">{error}</div>}<div className="catalog-grid">{repo.getCareers().map((career) => <button className={`goal-card ${current === career.id ? 'active' : ''}`} key={career.id} disabled={saving} onClick={() => void setCareer(career.id)}><BriefcaseBusiness /><b>{career.name}</b><span>{career.careerGroup}</span></button>)}</div>{current && <Link className="btn primary" to="/my-skills">Tiếp tục khai báo kỹ năng <ArrowRight /></Link>}</div>;
 }
 function MySkills() {
-  const st = useUserStore(),
-    car = st.selectedCareerId ? repo.getCareerById(st.selectedCareerId) : null,
-    [q, setQ] = useState("");
-  if (!car) return <NeedGoal />;
-  const req = repo
-    .getCareerRequirements(car.id)
-    .filter((x) => x.skill.name.toLowerCase().includes(q.toLowerCase()));
-  return (
-    <div className="container">
-      <Head
-        tag="TỰ KHAI BÁO · MÔ PHỎNG"
-        title={`Kỹ năng cho ${car.name}`}
-        text="Việc đánh dấu không xác nhận mức độ thành thạo."
-      />
-      <SearchBox value={q} set={setQ} placeholder="Tìm kỹ năng..." />
-      <div className="selection-list">
-        {req.map((r) => (
-          <label key={r.id}>
-            <input
-              type="checkbox"
-              checked={st.declaredSkillIds.includes(r.skill.id)}
-              onChange={() => st.toggleSkill(r.skill.id)}
-            />
-            <span>
-              <b>{r.skill.name}</b>
-              <small>{pretty(r.requirementType)}</small>
-            </span>
-          </label>
-        ))}
-      </div>
-      <Link className="btn primary" to="/skill-gap">
-        Xem phân tích mô phỏng
-      </Link>
-    </div>
-  );
+  const state = useUserStore(), career = state.selectedCareerId ? repo.getCareerById(state.selectedCareerId) : null;
+  const [query, setQuery] = useState(''), [page, setPage] = useState(1);
+  const requirements = career ? repo.getCareerRequirements(career.id) : [];
+  const requirementBySkill = new Map(requirements.map((row) => [row.skill.id, row.requirementType]));
+  const skills = repo.getSkills().filter((skill) => (skill.name + skill.description).toLowerCase().includes(query.toLowerCase()));
+  return <div className="container"><Head tag="KỸ NĂNG CỦA TÔI" title={career ? `Kỹ năng cho ${career.name}` : 'Kỹ năng cá nhân'} text="Kỹ năng được lưu theo tài khoản và không bị xóa khi đổi nghề mục tiêu. Đánh dấu không xác nhận mức thành thạo." />{state.loading && <p role="status">Đang tải kỹ năng cá nhân…</p>}{state.error && <div className="warning" role="alert">{state.error}</div>}<SearchBox value={query} set={(value) => { setQuery(value); setPage(1); }} placeholder="Tìm trong catalog kỹ năng..." /><CatalogMessage /><div className="selection-list">{repo.status === 'ready' && skills.slice((page - 1) * PAGE, page * PAGE).map((skill) => <label key={skill.id}><input type="checkbox" checked={state.declaredSkillIds.includes(skill.id)} disabled={state.saving} onChange={() => void state.toggleSkill(skill.id)} /><span><b>{skill.name}</b><small>{requirementBySkill.has(skill.id) ? pretty(requirementBySkill.get(skill.id)!) + ' · nghề mục tiêu' : pretty(skill.skillType)}</small></span></label>)}</div>{repo.status === 'ready' && !skills.length && <Empty />}<Pager page={page} total={skills.length} set={setPage} /><Link className="btn primary" to="/skill-gap">Xem phân tích skill gap</Link></div>;
 }
 function SkillGap() {
-  const st = useUserStore(),
-    car = st.selectedCareerId ? repo.getCareerById(st.selectedCareerId) : null;
-  if (!car) return <NeedGoal />;
-  const requirements = repo.getCareerRequirements(car.id),
-    analysis = calculateEssentialSelfDeclaration(
-      requirements,
-      st.declaredSkillIds,
-    ),
-    essentialById = new Map(
-      requirements
-        .filter((item) => item.requirementType === "essential")
-        .map((item) => [item.skill.id, item]),
-    ),
-    req = analysis.essentialSkillIds.map((id) => essentialById.get(id)!),
-    done = analysis.declaredEssentialSkillIds,
-    missing = analysis.missingEssentialSkillIds.map((id) =>
-      essentialById.get(id)!,
-    );
-  return (
-    <div className="container">
-      <Head
-        tag="PHÂN TÍCH MÔ PHỎNG"
-        title="Khoảng trống kỹ năng tự khai báo"
-        text="So sánh ID kỹ năng Essential với danh sách người dùng tự đánh dấu."
-      />
-      <div className="stat-summary">
-        <Metric v={req.length} l="Essential" />
-        <Metric v={done.length} l="Đã tự khai báo" />
-        <Metric v={missing.length} l="Chưa khai báo" />
-      </div>
-      <SelfDeclaredEssentialProgress
-        value={done.length}
-        total={req.length}
-        percentage={analysis.percentage}
-      />
-      <div className="content-section">
-        <h2>Kỹ năng chưa khai báo</h2>
-        {missing.map((x) => (
-          <SkillRow key={x.skill.id} x={x.skill} />
-        ))}
-      </div>
-      <Link className="btn primary" to="/learning-path">
-        Xem lộ trình minh họa
-      </Link>
-    </div>
-  );
+  const { user } = useAuth(), st = useUserStore();
+  const path = user?.role === 'user' ? (st.selectedCareerId ? `/me/skill-gap?careerId=${encodeURIComponent(st.selectedCareerId)}` : '/me/skill-gap') : null;
+  const result = useApiData<any>(path);
+  if (result.loading) return <div className="container" role="status">Đang phân tích skill gap trên Backend…</div>;
+  if (result.error) return <div className="container"><Head tag="SKILL GAP" title="Chưa thể tính khoảng trống kỹ năng" text={result.error} /><Link className="btn primary" to="/career-goal">Chọn nghề mục tiêu</Link></div>;
+  const gap = result.data;
+  if (!gap) return <NeedGoal />;
+  return <div className="container"><Head tag="SKILL GAP" title={`Khoảng trống kỹ năng · ${gap.career.name}`} text="Kết quả so sánh kỹ năng tự khai báo với yêu cầu nghề nghiệp; không suy luận proficiency." /><div className="stat-summary"><Metric v={gap.essential.required} l="Essential" /><Metric v={gap.essential.owned} l="Đã tự khai báo" /><Metric v={gap.essential.missing} l="Còn thiếu" /></div><SelfDeclaredEssentialProgress value={gap.essential.owned} total={gap.essential.required} percentage={gap.essential.required ? gap.essential.owned / gap.essential.required * 100 : 0} /><div className="content-section"><h2>Essential còn thiếu</h2>{gap.missingEssentialSkills.map((skill: Skill) => <SkillRow key={skill.id} x={skill} />)}{!gap.missingEssentialSkills.length && <p>Đã tự khai báo toàn bộ kỹ năng Essential được yêu cầu.</p>}</div><div className="content-section"><h2>Optional còn thiếu</h2>{gap.missingOptionalSkills.map((skill: Skill) => <SkillRow key={skill.id} x={skill} />)}{!gap.missingOptionalSkills.length && <p>Không còn kỹ năng Optional cần khai báo.</p>}</div><div className="actions"><Link className="btn primary" to="/learning-path">Xem lộ trình học</Link><Link className="btn secondary" to="/recommendations">Xem học liệu đủ điều kiện</Link></div><small>{gap.note}</small></div>;
+}
+function CareerFit() {
+  const { user } = useAuth(), fit = useApiData<any[]>(user?.role === 'user' ? '/me/career-fit' : null);
+  return <div className="container"><Head tag="CAREER FIT" title="Nghề phù hợp với kỹ năng của bạn" text="Điểm chỉ dựa trên mức hiện diện kỹ năng tự khai báo: 80% Essential và 20% Optional." />{fit.loading && <p role="status">Đang tính Career Fit…</p>}{fit.error && <div className="warning" role="alert">{fit.error}</div>}<div className="list cards">{(fit.data || []).map((row) => <article className="catalog-card" key={row.career.id}><span className="pill">{(row.score * 100).toFixed(1)}% fit</span><h3>{row.career.name}</h3><p>{row.essentialOwned}/{row.essentialTotal} Essential · {row.optionalOwned}/{row.optionalTotal} Optional</p><div className="bar"><i style={{ width: `${Math.max(0, Math.min(100, row.score * 100))}%` }} /></div><Link className="card-link" to={`/careers/${row.career.key}`}>Xem nghề <ArrowRight /></Link></article>)}</div>{fit.data?.length === 0 && <p>Chưa có kết quả Career Fit.</p>}</div>;
+}
+function Recommendations() {
+  const { user } = useAuth(), recs = useApiData<any>(user?.role === 'user' ? '/me/recommendations' : null);
+  return <div className="container"><Head tag="RECOMMENDATIONS" title="Học liệu được đề xuất" text="Backend chỉ trả về tài nguyên thỏa điều kiện phê duyệt học liệu và mapping." />{recs.loading && <p role="status">Đang tìm học liệu được phê duyệt…</p>}{recs.error && <div className="warning" role="alert">{recs.error}</div>}{recs.data?.career && <p>Nghề mục tiêu: <b>{recs.data.career.name}</b></p>}<div className="catalog-grid resources">{(recs.data?.items || []).map((row: any) => <ResourceCard key={row.resource.id} x={apiCourse(row.resource)} scopes={(row.evidence || []).map((item: any) => item.evidenceScope).filter(Boolean)} />)}</div>{recs.data && !recs.data.items.length && <p className="notice">Chưa có học liệu được phê duyệt cho kỹ năng còn thiếu.</p>}<small>Không có đề xuất nào được tạo từ dữ liệu chưa qua cả hai điều kiện phê duyệt.</small></div>;
 }
 function LearningPath() {
-  const st = useUserStore(),
-    car = st.selectedCareerId ? repo.getCareerById(st.selectedCareerId) : null;
-  if (!car) return <NeedGoal />;
-  const missing = repo
-    .getCareerRequirements(car.id)
-    .filter(
-      (x) =>
-        x.requirementType === "essential" &&
-        !st.declaredSkillIds.includes(x.skill.id),
-    );
-  return (
-    <div className="container">
-      <Head
-        tag="LỘ TRÌNH MÔ PHỎNG"
-        title={car.name}
-        text="Thứ tự hiển thị ổn định, không phải thứ tự tiên quyết đã xác minh."
-      />
-      <div className="warning">
-        Lộ trình này chỉ minh họa cách khám phá học liệu theo kỹ năng. Học liệu
-        chưa được tự động phê duyệt để khuyến nghị, và thứ tự học chưa được xác
-        minh.
-      </div>
-      <div className="timeline">
-        {missing.map((r, i) => (
-          <section key={r.id}>
-            <i>{i + 1}</i>
-            <div>
-              <h3>{r.skill.name}</h3>
-              <div className="catalog-grid resources">
-                {repo
-                  .getCoursesForSkill(r.skill.id)
-                  .slice(0, 3)
-                  .map((x) => (
-                    <ResourceCard
-                      key={x.course.id}
-                      x={x.course}
-                      scopes={x.evidence.map((e) => e.evidenceScope)}
-                    />
-                  ))}
-              </div>
-            </div>
-          </section>
-        ))}
-      </div>
-    </div>
-  );
+  const { user } = useAuth(), plan = useApiData<any>(user?.role === 'user' ? '/me/learning-path' : null);
+  return <div className="container"><Head tag="LEARNING PATH" title={plan.data?.career?.name || 'Lộ trình học tập'} text="Thứ tự chỉ dùng prerequisite đã được phê duyệt; không suy ra thành thạo từ học liệu." />{plan.loading && <p role="status">Đang tải lộ trình từ Backend…</p>}{plan.error && <div className="warning" role="alert">{plan.error}</div>}{plan.data?.note && <p className="notice">{plan.data.note}</p>}{plan.data?.steps?.length ? <div className="timeline">{plan.data.steps.map((step: any) => <section key={step.skill.id}><i>{step.order}</i><div><h3>{step.skill.name}</h3>{step.hasResources ? <div className="catalog-grid resources">{step.resources.map((resource: any) => <ResourceCard key={resource.id} x={apiCourse(resource)} scopes={(resource.evidence || []).map((item: any) => item.evidenceScope).filter(Boolean)} />)}</div> : <p className="notice">Chưa có học liệu đủ điều kiện cho kỹ năng này.</p>}</div></section>)}</div> : plan.data && <p>Không còn kỹ năng thiếu trong lộ trình.</p>}<Link className="btn secondary" to="/recommendations">Xem tất cả gợi ý</Link></div>;
 }
 function MyLearning() {
   return <MyLearningPage />;
 }
 function DataQuality() {
-  const p = repo.getRaw(),
-    m = p.manifest as any;
-  return (
-    <div className="container">
-      <Head
-        tag="DATA QUALITY"
-        title="Minh bạch chất lượng dữ liệu"
-        text="Kết quả validation offline, không phải xác minh database live."
-      />
-      <div className="stat-summary">
-        <Metric v="Catalog" l="Nguồn dữ liệu" />
-        <Metric v={m.records} l="Records" />
-        <Metric
-          v={m.external_arangodb_verified ? "Có" : "Chưa"}
-          l="Live DB verified"
-        />
-      </div>
-      <div className="warning">
-        Team preview · chưa DATA FREEZE · 68 ánh xạ tài liệu cũ cần kiểm duyệt
-        sâu · 9 trường hợp thiếu ghi chú giới hạn phạm vi · 0 prerequisite edge
-        · 0 automatic recommendation approval.
-      </div>
-      <h2>{repo.getRemainingEssentialGaps().length} Essential gaps còn lại</h2>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Nghề</th>
-              <th>Kỹ năng</th>
-              <th>Trạng thái</th>
-            </tr>
-          </thead>
-          <tbody>
-            {repo.getRemainingEssentialGaps().map((x, i) => (
-              <tr key={i}>
-                <td>{x[0]}</td>
-                <td>{x[1]}</td>
-                <td>{x[4]}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-function StatisticsRedirect() {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="container" role="status">Đang chuyển tới trang tổng quan…</div>;
-  return <Navigate to={user?.role === "admin" ? "/admin/dashboard" : "/dashboard"} replace />;
+  const release = useApiData<any>('/meta/release'), coverage = useApiData<any>('/statistics/coverage');
+  const report = coverage.data;
+  const perCareer = normalizeCoverageRows(report?.perCareer);
+  const gaps = perCareer.reduce((sum: number, row: any) => sum + row.essential.missing, 0);
+  return <div className="container"><Head tag="DATA QUALITY" title="Chất lượng dữ liệu live" text="Tóm tắt provenance và coverage do Backend đọc trực tiếp từ ArangoDB." />{(release.loading || coverage.loading) && <p role="status">Đang đọc metadata và coverage…</p>}{(release.error || coverage.error) && <div className="warning" role="alert">{release.error || coverage.error}</div>}{release.data && <div className="stat-summary"><Metric v={release.data.database} l="Database" /><Metric v={release.data.arangoVersion} l="ArangoDB" /><Metric v={release.data.source} l="Nguồn" /><Metric v={release.data.careers} l="Nghề nghiệp" /><Metric v={release.data.skills} l="Kỹ năng" /><Metric v={release.data.courses} l="Học liệu" /></div>}{report && <><h2>{gaps.toLocaleString('vi-VN')} yêu cầu Essential chưa có học liệu qua đủ điều kiện phê duyệt</h2><div className="table-wrap"><table><thead><tr><th>Nghề</th><th>Essential được bao phủ</th><th>Còn thiếu</th></tr></thead><tbody>{perCareer.map((row: any) => <tr key={row.career}><td>{row.career}</td><td>{row.essential.covered}/{row.essential.total}</td><td>{row.essential.missing}</td></tr>)}</tbody></table></div><p>{report.policy}</p></>}</div>;
 }
 function About() {
-  return (
-    <div className="container">
-      <Head
-        tag="ABOUT"
-        title="SkillGraph — Career & Learning Explorer"
-        text="Đồ án NoSQL trực quan hóa mô hình Career–Skill–Course–Provider trên ArangoDB."
-      />
-      <div className="steps">
-        <Info
-          n="HIỆN TẠI"
-          t="Catalog Career – Skill – Course"
-          x="Demo đọc dữ liệu build-time, không kết nối trực tiếp database."
-        />
-        <Info
-          n="TƯƠNG LAI"
-          t="React → Python REST API → ArangoDB"
-          x="API production chưa được cung cấp trong release."
-        />
-        <Info
-          n="NGUỒN"
-          t="ESCO 1.2.1"
-          x="Quan hệ taxonomy không phải prerequisite học tập."
-        />
-      </div>
-    </div>
-  );
+  return <div className="container"><Head tag="ABOUT" title="SkillGraph — Career & Learning Explorer" text="Đồ án NoSQL trực quan hóa mô hình Career–Skill–Course–Provider trên ArangoDB." /><div className="steps"><Info n="HIỆN TẠI" t="Catalog qua Backend Node.js" x="Frontend chỉ truy cập database qua API v1; không dùng JSON catalog làm kết quả chính thức." /><Info n="DỮ LIỆU" t="Batch 2 · dữ liệu live" x="Catalog công khai và coverage được Backend đọc từ ArangoDB operational clone." /><Info n="NGUỒN" t="ESCO taxonomy" x="Quan hệ phân loại không phải thứ tự học; học liệu không tự xác nhận kỹ năng." /></div></div>;
+}
+function UserGate() {
+  const { user, loading, error, refresh } = useAuth();
+  const location = useLocation();
+  if (loading) return <div className="container" role="status">Đang kiểm tra phiên đăng nhập…</div>;
+  if (!user && error) return <div className="container" role="alert"><p>Không thể xác minh phiên đăng nhập: {error}</p><button className="btn secondary" onClick={() => void refresh()}>Thử lại</button></div>;
+  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (user.role !== 'user') return <Navigate to="/403" replace />;
+  return <Outlet />;
 }
 const NeedGoal = () => (
   <div className="container">

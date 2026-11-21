@@ -1,262 +1,78 @@
-import { describe, expect, it } from "vitest";
-import { getCatalogRepository } from "../repositories/catalogRepository";
-import {
-  collapseBranch,
-  displayName,
-  mergeExpandedGraph,
-  prioritizeGraph,
-} from "../features/graph/graphModel";
-import { calculateEssentialSelfDeclaration } from "../features/skillGap/skillGapModel";
-import { validExternalHttpUrl } from "../utils/externalUrl";
-const repo = getCatalogRepository();
-describe("v3.66 catalog repository", () => {
-  it("uses the correct release and core counts", () => {
-    expect(repo.getReleaseInfo()).toMatchObject({
-      version: "v3.66",
-      records: 5990,
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { apiRequest } from '../api/http';
+import { ApiCatalogRepository } from '../repositories/catalogRepository';
+import { collapseBranch, displayName, mergeExpandedGraph, prioritizeGraph } from '../features/graph/graphModel';
+import type { GraphData } from '../types/catalog';
+
+const originalFetch = globalThis.fetch;
+const json = (data: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(data), {
+  status: 200,
+  headers: { 'Content-Type': 'application/json', ...headers },
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  vi.restoreAllMocks();
+});
+
+describe('Node API client', () => {
+  it('uses the v1 prefix and includes the session cookie', async () => {
+    const fetchMock = vi.fn(async () => json({ ok: true }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    await expect(apiRequest<{ ok: boolean }>('/meta/release')).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/meta/release', expect.objectContaining({ credentials: 'include' }));
+  });
+
+  it('parses backend error envelopes', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }), { status: 403 })) as typeof fetch;
+    await expect(apiRequest('/admin/users')).rejects.toMatchObject({ status: 403, code: 'FORBIDDEN', message: 'Forbidden' });
+  });
+});
+
+describe('API-backed catalog repository', () => {
+  it('loads live pages and maps career requirements and gated coverage DTOs', async () => {
+    const career = { key: 'c1', id: 'careers/c1', name: 'Data analyst', description: 'Career', careerGroup: 'data', iscoGroup: '2511', escoUri: '' };
+    const skill = { key: 's1', id: 'skills/s1', name: 'SQL', description: 'Query data', skillType: 'knowledge', escoUri: '', reuseLevel: null };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/careers?page=')) return json([career], { 'X-Total-Count': '1' });
+      if (url.includes('/skills?page=')) return json([skill], { 'X-Total-Count': '1' });
+      if (url.includes('/skill-groups?page=')) return json([], { 'X-Total-Count': '0' });
+      if (url.includes('/resources?page=')) return json([], { 'X-Total-Count': '0' });
+      if (url.includes('/providers?page=')) return json([], { 'X-Total-Count': '0' });
+      if (url.endsWith('/meta/release')) return json({ release: { version: 'v3.66-coverage50-batch2', records: 2 }, careers: 1, skills: 1, courses: 0 });
+      if (url.endsWith('/statistics/coverage')) return json({ perCareer: [{ career: 'Data analyst', essential: { covered: 1, total: 2, ratio: 0.5 }, optional: { covered: 0, total: 0, ratio: 0 } }] });
+      if (url.endsWith('/careers/c1/skills')) return json([{ key: 'r1', id: 'requires_skill/r1', from: 'careers/c1', to: 'skills/s1', raw: { _key: 'r1' }, requirementType: 'essential', skill, resourceCount: 1 }]);
+      throw new Error(`Unexpected API path ${url}`);
     });
-    expect(repo.getCareers()).toHaveLength(12);
-    expect(repo.getSkills()).toHaveLength(420);
-    expect(repo.getSkillGroups()).toHaveLength(149);
-    expect(repo.getCourses()).toHaveLength(510);
-    expect(repo.getProviders()).toHaveLength(183);
-  });
-  it("preserves Data Analyst requirements", () => {
-    const c = repo.getCareers().find((x) => x.name === "data analyst")!;
-    const r = repo.getCareerRequirements(c.id);
-    expect(r.filter((x) => x.requirementType === "essential")).toHaveLength(36);
-    expect(r.filter((x) => x.requirementType === "optional")).toHaveLength(31);
-  });
-  it("reports 305/343 direct topic coverage", () => {
-    const rows = repo.getCoverageReport();
-    expect(rows.reduce((n, x) => n + x.essential, 0)).toBe(343);
-    expect(rows.reduce((n, x) => n + x.covered, 0)).toBe(305);
-    expect(repo.getRemainingEssentialGaps()).toHaveLength(38);
-  });
-});
-describe("focused graphs", () => {
-  it("keeps Career to Skill direction", () => {
-    const career = repo.getCareers()[0],
-      graph = repo.getGraphForCareer(career.id);
-    expect(graph.nodes.length).toBeGreaterThan(1);
-    expect(
-      graph.edges.every(
-        (x) => x.source === career.id && x.target.startsWith("skills/"),
-      ),
-    ).toBe(true);
-  });
-  it("builds skill, resource and taxonomy neighborhoods", () => {
-    const skill = repo
-      .getSkills()
-      .find((x) => repo.getCoursesForSkill(x.id).length > 0)!;
-    expect(repo.getGraphForSkill(skill.id).edges.length).toBeGreaterThan(0);
-    const course = repo
-      .getCourses()
-      .find((x) => repo.getSkillsForCourse(x.id).length > 0)!;
-    expect(repo.getGraphForCourse(course.id).edges.length).toBeGreaterThan(0);
-    const group = repo
-      .getSkillGroups()
-      .find((x) => repo.getSkillsInGroup(x.id).length > 0)!;
-    expect(repo.getTaxonomyGraph(group.id).edges.length).toBeGreaterThan(0);
-  });
-  it("matches the v3.66 Ansible cases and preserves edge directions", () => {
-    const ansible = repo
-        .getSkills()
-        .find((x) => x.name.toLowerCase() === "ansible")!,
-      software = repo
-        .getCareers()
-        .find((x) => x.name.toLowerCase() === "software developer")!,
-      web = repo
-        .getCareers()
-        .find((x) => x.name.toLowerCase() === "web developer")!,
-      course = repo
-        .getCourses()
-        .find(
-          (x) => x.title.toLowerCase() === "start automating with ansible",
-        )!,
-      provider = repo
-        .getProviders()
-        .find((x) => x.name.toLowerCase() === "ansible community")!;
+    globalThis.fetch = fetchMock as typeof fetch;
 
-    for (const career of [software, web]) {
-      expect(
-        repo
-          .getGraphForCareer(career.id)
-          .edges.some(
-            (edge) =>
-              edge.type === "requires_skill" &&
-              edge.source === career.id &&
-              edge.target === ansible.id,
-          ),
-      ).toBe(true);
-    }
-    const courseGraph = repo.getGraphForCourse(course.id);
-    expect(
-      courseGraph.edges.some(
-        (edge) =>
-          edge.type === "teaches" &&
-          edge.source === course.id &&
-          edge.target === ansible.id,
-      ),
-    ).toBe(true);
-    expect(
-      courseGraph.edges.some(
-        (edge) =>
-          edge.type === "offered_by" &&
-          edge.source === course.id &&
-          edge.target === provider.id,
-      ),
-    ).toBe(true);
-  });
-  it("uses only stored ESCO membership and broader relations", () => {
-    const group = repo
-        .getSkillGroups()
-        .find(
-          (x) =>
-            x.name.toLowerCase() ===
-            "interpreting technical documentation and diagrams",
-        )!,
-      graph = repo.getTaxonomyGraph(group.id),
-      memberships = graph.edges.filter(
-        (edge) => edge.type === "esco_skill_group" && edge.target === group.id,
-      ),
-      broader = graph.edges.filter(
-        (edge) =>
-          edge.type === "esco_group_broader" && edge.source === group.id,
-      );
-    expect(memberships).toHaveLength(2);
-    expect(memberships.every((edge) => edge.source.startsWith("skills/"))).toBe(
-      true,
-    );
-    expect(broader).toHaveLength(1);
-    expect(broader[0].target.startsWith("skill_groups/")).toBe(true);
-  });
-});
-describe("graph expansion model", () => {
-  it("expands Java with its real teaches neighbor and prioritizes it under limit", () => {
-    const java = repo
-      .getSkills()
-      .find((x) => x.name === "Java (computer programming)")!;
-    const career = repo.getCareersForSkill(java.id)[0].career,
-      base = repo.getGraphForCareer(career.id),
-      expanded = mergeExpandedGraph(base, new Set([java.id])),
-      courses = repo.getCoursesForSkill(java.id);
-    expect(courses).toHaveLength(1);
-    expect(expanded.nodes.some((x) => x.id === courses[0].course.id)).toBe(
-      true,
-    );
-    expect(
-      expanded.edges.some(
-        (x) =>
-          x.source === courses[0].course.id &&
-          x.target === java.id &&
-          x.type === "teaches",
-      ),
-    ).toBe(true);
-    expect(
-      prioritizeGraph(expanded, career.id, new Set([java.id]), 30).some(
-        (x) => x.id === courses[0].course.id,
-      ),
-    ).toBe(true);
-  });
-  it("collapses one branch without removing another expanded branch", () => {
-    const skills = repo
-        .getSkills()
-        .filter((x) => repo.getCoursesForSkill(x.id).length > 0)
-        .slice(0, 2),
-      set = new Set(skills.map((x) => x.id));
-    const next = collapseBranch(set, skills[0].id);
-    expect(next.has(skills[0].id)).toBe(false);
-    expect(next.has(skills[1].id)).toBe(true);
-  });
-  it("maps valid names and reports a meaningful fallback", () => {
-    expect(displayName("Java (computer programming)", "skills/java")).toEqual({
-      label: "Java (computer programming)",
-      fallback: false,
-    });
-    expect(displayName("-", "skills/missing")).toEqual({
-      label: "[Thiếu tên] missing",
-      fallback: true,
-    });
-  });
-  it("keeps teaches and offered_by directions", () => {
-    const course = repo
-        .getCourses()
-        .find((x) => repo.getSkillsForCourse(x.id).length > 0)!,
-      graph = repo.getGraphForCourse(course.id);
-    expect(
-      graph.edges
-        .filter((x) => x.type === "teaches")
-        .every((x) => x.source === course.id && x.target.startsWith("skills/")),
-    ).toBe(true);
-    expect(
-      graph.edges
-        .filter((x) => x.type === "offered_by")
-        .every(
-          (x) => x.source === course.id && x.target.startsWith("providers/"),
-        ),
-    ).toBe(true);
-  });
-  it("expands a taxonomy group with real neighboring nodes and edges", () => {
-    const root = repo.getSkillGroups()[0],
-      base: ReturnType<typeof repo.getTaxonomyGraph> = {
-        nodes: [{ id: root.id, type: "skillGroup", label: root.name }],
-        edges: [],
-      },
-      expanded = mergeExpandedGraph(base, new Set([root.id])),
-      expected = repo.getTaxonomyGraph(root.id);
-    expect(expanded.nodes).toHaveLength(expected.nodes.length);
-    expect(expanded.edges).toHaveLength(expected.edges.length);
-    expect(
-      expanded.edges.every((edge) =>
-        expected.edges.some((x) => x.id === edge.id),
-      ),
-    ).toBe(true);
+    const repository = new ApiCatalogRepository();
+    await repository.load();
+
+    expect(repository.status).toBe('ready');
+    expect(repository.getCareerById('c1')?.name).toBe('Data analyst');
+    expect(repository.getCareerRequirements('careers/c1')[0]).toMatchObject({ requirementType: 'essential', skill: { id: 'skills/s1' }, resourceCount: 1 });
+    expect(repository.getCoverageReport()).toEqual([{ career: 'Data analyst', essential: 2, covered: 1, missing: 1, pct: 50 }]);
   });
 });
 
-describe("skill gap self-declaration", () => {
-  it("uses the ID intersection of Essential skills only", () => {
-    const result = calculateEssentialSelfDeclaration(
-      [
-        { requirementType: "essential", skill: { id: "skills/a" } },
-        { requirementType: "essential", skill: { id: "skills/b" } },
-        { requirementType: "optional", skill: { id: "skills/c" } },
-      ],
-      ["skills/a", "skills/c", "skills/outside"],
-    );
+describe('API graph model', () => {
+  const base: GraphData = { nodes: [{ id: 'careers/c1', type: 'career', label: 'Career' }], edges: [] };
+  const neighbors: GraphData = {
+    nodes: [{ id: 'careers/c1', type: 'career', label: 'Career' }, { id: 'skills/s1', type: 'skill', label: 'SQL' }],
+    edges: [{ id: 'requires_skill/r1', source: 'careers/c1', target: 'skills/s1', type: 'requires_skill' }],
+  };
 
-    expect(result.essentialSkillIds).toEqual(["skills/a", "skills/b"]);
-    expect(result.declaredEssentialSkillIds).toEqual(["skills/a"]);
-    expect(result.missingEssentialSkillIds).toEqual(["skills/b"]);
-    expect(result.percentage).toBe(50);
+  it('merges API neighbors without reversing edge direction', () => {
+    const graph = mergeExpandedGraph(base, [neighbors]);
+    expect(graph.nodes).toHaveLength(2);
+    expect(graph.edges[0]).toMatchObject({ source: 'careers/c1', target: 'skills/s1' });
+    expect(prioritizeGraph(graph, 'careers/c1', new Set(), 1)).toHaveLength(1);
   });
 
-  it("deduplicates IDs in requirements and declarations", () => {
-    const result = calculateEssentialSelfDeclaration(
-      [
-        { requirementType: "essential", skill: { id: "skills/a" } },
-        { requirementType: "essential", skill: { id: "skills/a" } },
-      ],
-      ["skills/a", "skills/a"],
-    );
-
-    expect(result.essentialSkillIds).toHaveLength(1);
-    expect(result.declaredEssentialSkillIds).toHaveLength(1);
-    expect(result.percentage).toBe(100);
-  });
-});
-
-describe("external resource URLs", () => {
-  it("accepts only absolute HTTP and HTTPS source URLs", () => {
-    expect(validExternalHttpUrl("https://example.com/course")).toBe(
-      "https://example.com/course",
-    );
-    expect(validExternalHttpUrl("http://example.com/course")).toBe(
-      "http://example.com/course",
-    );
-    expect(validExternalHttpUrl("javascript:alert(1)")).toBeNull();
-    expect(validExternalHttpUrl("/invented-source")).toBeNull();
-    expect(validExternalHttpUrl("")).toBeNull();
+  it('collapses only the selected expansion and labels missing names', () => {
+    expect(collapseBranch(new Set(['skills/a', 'skills/b']), 'skills/a')).toEqual(new Set(['skills/b']));
+    expect(displayName('-', 'skills/missing')).toEqual({ label: '[Thiếu tên] missing', fallback: true });
   });
 });

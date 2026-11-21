@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Activity, Bell, BookOpen, BriefcaseBusiness, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Database, FileStack, LayoutDashboard, LogOut, Menu, Network, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react';
-import { useAuth } from '../../auth/AuthProvider';
+import { useAuth, type AuthUser } from '../../auth/AuthProvider';
 import { useAdminStore } from '../store/adminStore';
 
+export type AdminGateState = 'loading' | 'retry' | 'login' | 'forbidden' | 'allow';
+
+export function resolveAdminGateState(user: AuthUser | null, loading: boolean, error: string): AdminGateState {
+  if (!user && loading) return 'loading';
+  if (!user && error) return 'retry';
+  if (!user) return 'login';
+  return user.role === 'admin' ? 'allow' : 'forbidden';
+}
+
 export function AdminGate() {
-  const { user, loading, error } = useAuth();
+  const { user, loading, error, refresh } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="admin-gate-loading">Đang xác thực quyền quản trị…</div>;
-  if (error) return <div className="admin-gate-loading"><strong>Không xác minh được phiên.</strong><p>{error}</p><Link to="/login">Đăng nhập lại</Link></div>;
-  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
-  if (user.role !== 'admin') return <Navigate to="/403" replace />;
-  return <Outlet />;
+  const state = resolveAdminGateState(user, loading, error);
+  if (state === 'loading') return <div className="admin-gate-loading" role="status">Đang xác thực quyền quản trị…</div>;
+  if (state === 'retry') return <div className="admin-gate-loading" role="alert"><strong>Không xác minh được phiên.</strong><p>{error}</p><button className="admin-btn" onClick={() => void refresh()}>Thử lại</button></div>;
+  if (state === 'login') return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (state === 'forbidden') return <Navigate to="/403" replace />;
+  return <>{error && <div className="admin-db-sync error" role="status"><span>Không thể xác minh lại phiên Admin; vẫn giữ phiên hiện tại. {error}</span><button onClick={() => void refresh()}><RefreshCw size={14} /> Thử lại</button></div>}<Outlet /></>;
 }
 
 const nav = [
@@ -53,7 +63,7 @@ export default function AdminLayout() {
       </nav>
       <div className="admin-sidebar-bottom">
         <Link to="/" className="admin-nav-link"><CircleHelp size={18} /><span>Về website</span></Link>
-        <div className="admin-sidebar-version"><span className={`admin-status-dot ${catalogStatus}`} /> {catalogStatus === 'live' ? 'Live · ArangoDB' : catalogStatus === 'loading' ? 'Đang tải ArangoDB…' : 'Snapshot dự phòng'}</div>
+        <div className="admin-sidebar-version"><span className={`admin-status-dot ${catalogStatus}`} /> {catalogStatus === 'live' ? 'Live · ArangoDB' : catalogStatus === 'loading' ? 'Đang tải ArangoDB…' : 'API chưa kết nối'}</div>
         <button className="admin-collapse" onClick={() => setCollapsed(!collapsed)}>{collapsed ? <ChevronRight size={17} /> : <><ChevronLeft size={17} /> Thu gọn menu</>}</button>
       </div>
     </aside>
@@ -66,7 +76,7 @@ export default function AdminLayout() {
         <div className="admin-user-menu"><span className="admin-avatar">{(user?.name || 'A').slice(0, 1).toUpperCase()}</span><span className="admin-user-copy"><strong>{user?.name || 'Admin'}</strong><small>Quản trị viên</small></span><ChevronDown size={15} /><button title="Đăng xuất" onClick={() => void logout()}><LogOut size={16} /></button></div>
       </header>
       <main className="admin-content" data-admin-search={search}>
-        <div className={`admin-db-sync ${catalogStatus}`} role="status">{catalogStatus === 'live' ? <><CheckCircle2 size={15} /><span><strong>Dữ liệu mới nhất</strong> · Đọc trực tiếp từ <b>ArangoDB</b>{catalogFetchedAt ? ` · ${new Date(catalogFetchedAt * 1000).toLocaleTimeString('vi-VN')}` : ''}</span><button onClick={() => void loadLiveCatalog()} title="Tải lại từ ArangoDB"><RefreshCw size={14} /> Làm mới</button></> : catalogStatus === 'loading' ? <><RefreshCw className="admin-spin" size={15} /><span>Đang tải dữ liệu mới nhất từ ArangoDB…</span></> : <><span className="admin-sync-warn">!</span><span><strong>Chưa tải được dữ liệu live.</strong> {catalogError || 'Đang hiển thị snapshot dự phòng.'}</span><button onClick={() => void loadLiveCatalog()}><RefreshCw size={14} /> Thử lại</button></>}</div>
+        <div className={`admin-db-sync ${catalogStatus}`} role="status">{catalogStatus === 'live' ? <><CheckCircle2 size={15} /><span><strong>Dữ liệu mới nhất</strong> · Đọc trực tiếp từ <b>ArangoDB</b>{catalogFetchedAt ? ` · ${new Date(catalogFetchedAt * 1000).toLocaleTimeString('vi-VN')}` : ''}</span><button onClick={() => void loadLiveCatalog()} title="Tải lại từ ArangoDB"><RefreshCw size={14} /> Làm mới</button></> : catalogStatus === 'loading' ? <><RefreshCw className="admin-spin" size={15} /><span>Đang tải dữ liệu mới nhất từ ArangoDB…</span></> : <><span className="admin-sync-warn">!</span><span><strong>Chưa tải được dữ liệu live.</strong> {catalogError || 'Không hiển thị snapshot cục bộ.'}</span><button onClick={() => void loadLiveCatalog()}><RefreshCw size={14} /> Thử lại</button></>}</div>
         <Outlet context={{ search }} /></main>
     </section>
   </div>;

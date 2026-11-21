@@ -24,8 +24,8 @@ function Frame({ title, subtitle, children }: { title: string; subtitle: string;
 function Password({ label = 'Mật khẩu', name = 'password', newPassword = false }: { label?: string; name?: string; newPassword?: boolean }) {
   const [visible, setVisible] = useState(false);
   return <label className="auth-field">{label}<span className="auth-password">
-    <input name={name} type={visible ? 'text' : 'password'} required minLength={newPassword ? 10 : 1} maxLength={128}
-      autoComplete={newPassword ? 'new-password' : 'current-password'} placeholder={newPassword ? 'Ít nhất 10 ký tự' : 'Nhập mật khẩu của bạn'} />
+    <input name={name} type={visible ? 'text' : 'password'} required minLength={newPassword ? 12 : 1} maxLength={256}
+      autoComplete={newPassword ? 'new-password' : 'current-password'} placeholder={newPassword ? 'Ít nhất 12 ký tự' : 'Nhập mật khẩu của bạn'} />
     <button type="button" onClick={() => setVisible(!visible)} aria-label={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'} aria-pressed={visible}>
       {visible ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>;
 }
@@ -47,17 +47,51 @@ function destinationAfterLogin(role: 'admin' | 'user', target: string) {
   return target.startsWith('/admin') || target === '/403' ? '/account' : target;
 }
 export function validateNewPassword(password: string, confirmation: string) {
-  if (password.length < 10 || password.length > 128 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password))
-    throw new Error('Mật khẩu cần 10–128 ký tự, gồm chữ hoa, chữ thường và số.');
+  if (password.length < 12 || password.length > 256 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password))
+    throw new Error('Mật khẩu cần 12–256 ký tự, gồm chữ hoa, chữ thường và số.');
   if (password !== confirmation) throw new Error('Mật khẩu xác nhận chưa khớp.');
 }
 
+export function PasswordChangeForm() {
+  const { completePasswordChange } = useAuth();
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    setError('');
+    try {
+      validateNewPassword(value(data, 'newPassword'), value(data, 'confirmation'));
+      setBusy(true);
+      await authRequest('/auth/change-password', { currentPassword: value(data, 'currentPassword'), newPassword: value(data, 'newPassword') });
+      completePasswordChange();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally { setBusy(false); }
+  }
+  return <form onSubmit={submit} className="auth-form">
+    <h3>Đổi mật khẩu</h3><Notice error={error} />
+    <fieldset disabled={busy}>
+      <Password name="currentPassword" label="Mật khẩu hiện tại" />
+      <Password name="newPassword" label="Mật khẩu mới" newPassword />
+      <Password name="confirmation" label="Xác nhận mật khẩu mới" newPassword />
+      <Submit busy={busy}>Cập nhật mật khẩu</Submit>
+    </fieldset>
+  </form>;
+}
+
 export function LoginPage() {
-  const { user, login } = useAuth();
+  const { user, login, passwordChangedNotice, clearPasswordChangedNotice } = useAuth();
   const navigate = useNavigate(), location = useLocation();
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [passwordChanged, setPasswordChanged] = useState(Boolean(location.state?.passwordChanged));
+  useEffect(() => {
+    if (passwordChangedNotice) {
+      setPasswordChanged(true);
+      clearPasswordChangedNotice();
+    }
+  }, [passwordChangedNotice, clearPasswordChangedNotice]);
   const target = safeReturnPath(location.state?.from);
-  if (user) return <Navigate to={destinationAfterLogin(user.role, target)} replace />;
+  if (user && !location.state?.passwordChanged && !passwordChangedNotice) return <Navigate to={destinationAfterLogin(user.role, target)} replace />;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError('');
     try {
@@ -68,9 +102,9 @@ export function LoginPage() {
     catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   return <Frame title="Chào mừng trở lại" subtitle="Đăng nhập để tiếp tục khám phá cùng SkillGraph.">
-    <Notice error={error} success={location.state?.registered ? 'Đăng ký thành công! Hãy đăng nhập tài khoản mới.' : undefined} />
+    <Notice error={error} success={passwordChanged ? 'Mật khẩu đã đổi. Hãy đăng nhập lại.' : location.state?.registered ? 'Đăng ký thành công! Hãy đăng nhập tài khoản mới.' : undefined} />
     <form onSubmit={submit} className="auth-form"><fieldset disabled={busy}>
-      <label className="auth-field">Tên đăng nhập hoặc email<input type="text" name="email" autoComplete="username" required maxLength={254} placeholder="admin hoặc ban@example.com" /></label>
+      <label className="auth-field">Email<input type="email" name="email" autoComplete="username" required maxLength={254} placeholder="ban@example.com" /></label>
       <Password /><Link className="auth-forgot" to="/forgot-password">Quên mật khẩu?</Link>
       <Submit busy={busy}>Đăng nhập</Submit></fieldset></form>
     <p className="auth-switch">Chưa có tài khoản? <Link to="/register">Đăng ký ngay</Link></p>
@@ -85,7 +119,7 @@ export function RegisterPage() {
     event.preventDefault(); const data = new FormData(event.currentTarget); setError('');
     try {
       validateNewPassword(value(data, 'password'), value(data, 'confirmation')); setBusy(true);
-      await authRequest('register', { name: value(data, 'name').trim(), email: value(data, 'email'), password: value(data, 'password') });
+      await authRequest('/auth/register', { displayName: value(data, 'name').trim(), email: value(data, 'email'), password: value(data, 'password') });
       navigate('/login', { replace: true, state: { registered: true } });
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
@@ -93,7 +127,7 @@ export function RegisterPage() {
     <Notice error={error} /><form onSubmit={submit} className="auth-form"><fieldset disabled={busy}>
       <label className="auth-field">Họ và tên<input name="name" required minLength={2} maxLength={80} autoComplete="name" placeholder="Nguyễn Văn An" /></label>
       <label className="auth-field">Email<input type="email" name="email" required maxLength={254} autoComplete="email" placeholder="ban@example.com" /></label>
-      <Password newPassword /><p className="auth-hint">10–128 ký tự, gồm chữ hoa, chữ thường và số.</p>
+      <Password newPassword /><p className="auth-hint">12–256 ký tự, gồm chữ hoa, chữ thường và số.</p>
       <Password name="confirmation" label="Xác nhận mật khẩu" newPassword />
       <Submit busy={busy}>Tạo tài khoản</Submit></fieldset></form>
     <p className="auth-switch">Đã có tài khoản? <Link to="/login">Đăng nhập</Link></p>
@@ -104,7 +138,7 @@ export function ForgotPasswordPage() {
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [success, setSuccess] = useState('');
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(''); setSuccess('');
-    try { const result = await authRequest<{ message: string }>('forgot-password', { email: value(data, 'email') }); setSuccess(result.message); }
+    try { const result = await authRequest<{ accepted: boolean }>('/auth/forgot-password', { email: value(data, 'email') }); setSuccess(result.accepted ? 'Nếu địa chỉ email có tài khoản, hướng dẫn đặt lại sẽ được gửi khi dịch vụ email được cấu hình.' : 'Không thể tiếp nhận yêu cầu đặt lại mật khẩu.'); }
     catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   return <Frame title="Quên mật khẩu?" subtitle="Nhập email đăng ký. Chúng tôi sẽ gửi liên kết để bạn tạo mật khẩu mới.">
@@ -125,14 +159,14 @@ export function ResetPasswordPage() {
     event.preventDefault(); const data = new FormData(event.currentTarget); setError('');
     try {
       validateNewPassword(value(data, 'password'), value(data, 'confirmation')); setBusy(true);
-      const result = await authRequest<{ message: string }>('reset-password', { token, password: value(data, 'password') });
-      setSuccess(result.message); await refresh();
+      await authRequest<{ changed: boolean }>('/auth/reset-password', { token, newPassword: value(data, 'password') });
+      setSuccess('Mật khẩu đã được đặt lại. Hãy đăng nhập lại bằng mật khẩu mới.'); await refresh();
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   return <Frame title="Đặt lại mật khẩu" subtitle="Tạo mật khẩu mới để bảo vệ tài khoản SkillGraph của bạn.">
     <Notice error={error || (!token ? 'Liên kết thiếu mã xác nhận. Hãy yêu cầu liên kết mới.' : '')} success={success} />
     {token && !success && <form onSubmit={submit} className="auth-form"><fieldset disabled={busy}>
-      <Password newPassword label="Mật khẩu mới" /><p className="auth-hint">10–128 ký tự, gồm chữ hoa, chữ thường và số.</p>
+      <Password newPassword label="Mật khẩu mới" /><p className="auth-hint">12–256 ký tự, gồm chữ hoa, chữ thường và số.</p>
       <Password newPassword name="confirmation" label="Xác nhận mật khẩu mới" /><Submit busy={busy}>Lưu mật khẩu mới</Submit>
     </fieldset></form>}
     <p className="auth-switch"><Link to={success ? '/login' : '/forgot-password'}>{success ? 'Đăng nhập ngay' : 'Yêu cầu liên kết mới'}</Link></p>
@@ -147,9 +181,9 @@ export function AccountPage() {
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
   return <Frame title={`Xin chào, ${user.name}`} subtitle="Bạn đã đăng nhập vào SkillGraph.">
-    <dl className="auth-profile"><dt>Họ tên</dt><dd>{user.name}</dd>{user.username && <><dt>Tên đăng nhập</dt><dd>{user.username}</dd></>}{user.email && <><dt>Email</dt><dd>{user.email}</dd></>}<dt>Vai trò</dt><dd>Người dùng</dd></dl>
+    <dl className="auth-profile"><dt>Họ tên</dt><dd>{user.name}</dd>{user.email && <><dt>Email</dt><dd>{user.email}</dd></>}<dt>Vai trò</dt><dd>Người dùng</dd></dl>
     <Notice error={actionError} /><Link className="auth-submit" to="/careers">Khám phá nghề nghiệp <ArrowRight size={18} /></Link>
-    <p className="auth-switch"><Link to="/forgot-password">Đặt lại mật khẩu qua email</Link></p>
+    <PasswordChangeForm /><p className="auth-switch"><Link to="/forgot-password">Quên mật khẩu?</Link></p>
     <button className="auth-logout" disabled={busy} onClick={async () => { setBusy(true); setActionError(''); try { await logout(); } catch (e) { setActionError(errorMessage(e)); } finally { setBusy(false); } }}>{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>
   </Frame>;
 }

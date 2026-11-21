@@ -1,0 +1,18 @@
+{
+  "name": "skill-graph-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.mjs",
+    "build": "node src/build.mjs",
+    "migrate": "node --env-file-if-exists=.secrets/bootstrap.env src/migrate.mjs",
+    "bootstrap-db": "node --env-file-if-exists=.secrets/bootstrap.env src/bootstrap-db.mjs",
+    "admin:create-initial": "node --env-file-if-exists=.secrets/bootstrap.env src/cli.mjs create-initial-admin",
+    "test": "node --test tests/*.test.mjs",
+    "integration": "node --env-file-if-exists=.env tests/integration.mjs"
+  }
+}
